@@ -1,0 +1,19 @@
+[package]
+name = "dmalloc"
+version = "0.0.1"
+authors = ["Michael Egger <michael.egger@tsn.at>"]
+edition = "2018"
+
+[lib]
+name = "dmalloc"
+crate-type = ["dylib"]
+
+[dependencies]
+libc = "0.2"
+libc-print = "0.1.11"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
