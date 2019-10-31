@@ -16,15 +16,16 @@ pub struct BlockMeta {
 
 pub fn alloc_block(size: usize) -> Option<* mut BlockMeta> {
     let block = sbrk(0)? as *mut BlockMeta;
-    let requested = sbrk((BLOCK_META_SIZE + size) as isize)?;
+    let raw_size = (BLOCK_META_SIZE + size).next_power_of_two();
+    let requested = sbrk(raw_size as isize)?;
     unsafe {
         (*block).start = block.offset(1) as *mut c_void;
         (*block).size = size;
         (*block).next = None;
         (*block).empty = false;
     }
-    libc_println!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (meta_size={})", requested, BLOCK_META_SIZE);
-    debug_assert_eq!(block as *mut c_void, requested);
+    libc_println!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (raw_size={})", requested, raw_size);
+    assert_eq!(block as *mut c_void, requested);
     update_heap(block);
     Some(block)
 }

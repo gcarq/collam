@@ -14,6 +14,7 @@ use core::ptr;
 
 mod macros;
 mod meta;
+mod util;
 
 
 #[no_mangle]
@@ -74,7 +75,7 @@ pub extern "C" fn free(pointer: *mut c_void) {
     }
     let block = get_block_ptr(pointer);
     unsafe {
-        debug_assert_eq!((*block).empty, false);
+        assert_eq!((*block).empty, false);
         (*block).empty = true;
     }
 }
