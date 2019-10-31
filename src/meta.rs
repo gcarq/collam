@@ -1,35 +1,67 @@
 use core::intrinsics;
+use libc::c_void;
 use libc_print::libc_println;
 
 
+pub const BLOCK_META_SIZE: usize = intrinsics::size_of::<BlockMeta>();
 static mut HEAD: Option<*mut BlockMeta> = None;
 
 #[repr(C)]
 pub struct BlockMeta {
+    pub start: *mut c_void,
     pub size: usize,
     pub next: Option<*mut BlockMeta>,
     pub empty: bool,
 }
 
-pub const BLOCK_META_SIZE: usize = intrinsics::size_of::<BlockMeta>();
-
-use libc::c_void;
-
-pub fn alloc_block(size: usize) -> * mut BlockMeta {
-    let block = unsafe { libc::sbrk(0) } as *mut BlockMeta;
-    let req = unsafe { libc::sbrk((BLOCK_META_SIZE + size) as isize) };
+pub fn alloc_block(size: usize) -> Option<* mut BlockMeta> {
+    let block = sbrk(0)? as *mut BlockMeta;
+    let requested = sbrk((BLOCK_META_SIZE + size) as isize)?;
     unsafe {
+        (*block).start = block.offset(1) as *mut c_void;
         (*block).size = size;
         (*block).next = None;
         (*block).empty = false;
     }
-    libc_println!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (meta_size={})", req, BLOCK_META_SIZE);
-    assert!(block as *mut c_void == req);
+    libc_println!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (meta_size={})", requested, BLOCK_META_SIZE);
+    debug_assert_eq!(block as *mut c_void, requested);
+    update_heap(block);
+    Some(block)
+}
+
+pub fn reuse_block(size: usize) -> Option<*mut BlockMeta> {
+    let mut cur_block = unsafe { HEAD };
+    while let Some(block) = cur_block {
+        unsafe {
+            //libc_println!("[libdmalloc.so] DEBUG: reuse_block() checking {:?} (empty={}, size={}, next={:?})", block, (*block).empty, (*block).size, (*block).next);
+            if (*block).empty && size <= (*block).size {
+                (*block).empty = false;
+                return Some(block);
+            }
+            cur_block = (*block).next;
+        }
+    }
+    None
+}
+
+fn update_heap(block: *mut BlockMeta) {
     unsafe {
         match HEAD {
             None => HEAD = Some(block),
             Some(b) => {(*b).next = Some(block)}
         }
     }
-    block
+}
+
+pub fn get_block_ptr(ptr: *mut c_void) -> *mut BlockMeta {
+    unsafe {(ptr as *mut BlockMeta).offset(-1)}
+}
+
+fn sbrk(size: isize) -> Option<*mut c_void> {
+    let ptr = unsafe { libc::sbrk(size) };
+    if ptr == -1_isize as *mut c_void {
+        None
+    } else {
+        Some(ptr)
+    }
 }

@@ -11,9 +11,3 @@ crate-type = ["dylib"]
 [dependencies]
 libc = "0.2"
 libc-print = "0.1.11"
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
