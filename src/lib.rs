@@ -7,7 +7,7 @@ extern crate libc_print;
 use core::panic::PanicInfo;
 
 use libc::{size_t, c_void};
-use libc_print::libc_println;
+use libc_print::libc_eprintln;
 use crate::meta::{alloc_block, get_block_ptr, reuse_block};
 use core::intrinsics;
 use core::ptr;
@@ -26,18 +26,18 @@ pub extern "C" fn malloc(size: size_t) -> *mut c_void {
     // Reuse a free block if applicable
     if let Some(block) = reuse_block(size) {
         let pointer = unsafe { (*block).start };
-        libc_println!("[libdmalloc.so] malloc: reusing block at {:?}", pointer);
+        libc_eprintln!("[libdmalloc.so] malloc: reusing block at {:?}", pointer);
         return pointer;
     }
 
     // Allocate new block with required size
     if let Some(block) = alloc_block(size) {
         let pointer = unsafe { (*block).start };
-        libc_println!("[libdmalloc.so] malloc: allocated {} bytes at {:?}", size, pointer);
+        libc_eprintln!("[libdmalloc.so] malloc: allocated {} bytes at {:?}", size, pointer);
         return pointer;
     }
 
-    libc_println!("[libdmalloc.so] malloc failed. retuning NULL!");
+    libc_eprintln!("[libdmalloc.so] malloc failed. retuning NULL!");
     return ptr::null_mut::<c_void>();
 }
 
@@ -63,13 +63,13 @@ pub extern "C" fn realloc(p: *mut c_void, size: size_t) -> *mut c_void {
         ptr::copy((*block).start, new_ptr, (*block).size);
     }
     free(p);
-    libc_println!("[libdmalloc.so] realloc: reallocated {} bytes at {:?}\n", size, p);
+    libc_eprintln!("[libdmalloc.so] realloc: reallocated {} bytes at {:?}\n", size, p);
     new_ptr
 }
 
 #[no_mangle]
 pub extern "C" fn free(pointer: *mut c_void) {
-    libc_println!("[libdmalloc.so] free: dropping {:?}\n", pointer);
+    libc_eprintln!("[libdmalloc.so] free: dropping {:?}\n", pointer);
     if pointer.is_null() {
         return
     }
@@ -82,6 +82,11 @@ pub extern "C" fn free(pointer: *mut c_void) {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    if let Some(s) = info.payload().downcast_ref::<&str>() {
+        libc_eprintln!("panic occurred: {:?}", s);
+    } else {
+        libc_eprintln!("panic occurred");
+    }
     unsafe { intrinsics::abort() }
 }
 

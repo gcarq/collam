@@ -1,6 +1,6 @@
 use core::intrinsics;
 use libc::c_void;
-use libc_print::libc_println;
+use libc_print::libc_eprintln;
 
 
 pub const BLOCK_META_SIZE: usize = intrinsics::size_of::<BlockMeta>();
@@ -24,7 +24,7 @@ pub fn alloc_block(size: usize) -> Option<* mut BlockMeta> {
         (*block).next = None;
         (*block).empty = false;
     }
-    libc_println!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (raw_size={})", requested, raw_size);
+    libc_eprintln!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (raw_size={})", requested, raw_size);
     assert_eq!(block as *mut c_void, requested);
     update_heap(block);
     Some(block)
