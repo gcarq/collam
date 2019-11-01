@@ -9,8 +9,7 @@ use core::panic::PanicInfo;
 use libc::{size_t, c_void};
 use libc_print::libc_eprintln;
 use crate::meta::{alloc_block, get_block_ptr, reuse_block};
-use core::intrinsics;
-use core::ptr;
+use core::{cmp, intrinsics, ptr};
 
 mod macros;
 mod meta;
@@ -60,7 +59,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: size_t) -> *mut c_void {
     let new_ptr = malloc(size);
     unsafe {
         // TODO: don't reuse blocks and use copy_nonoverlapping
-        ptr::copy((*block).start, new_ptr, (*block).size);
+        ptr::copy((*block).start, new_ptr, cmp::min(size, (*block).size));
     }
     free(p);
     libc_eprintln!("[libdmalloc.so] realloc: reallocated {} bytes at {:?}\n", size, p);
