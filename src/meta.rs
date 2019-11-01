@@ -8,7 +8,6 @@ static mut HEAD: Option<*mut BlockMeta> = None;
 
 #[repr(C)]
 pub struct BlockMeta {
-    pub start: *mut c_void,
     pub size: usize,
     pub next: Option<*mut BlockMeta>,
     pub empty: bool,
@@ -19,12 +18,11 @@ pub fn alloc_block(size: usize) -> Option<* mut BlockMeta> {
     let raw_size = (BLOCK_META_SIZE + size).next_power_of_two();
     let requested = sbrk(raw_size as isize)?;
     unsafe {
-        (*block).start = block.offset(1) as *mut c_void;
         (*block).size = size;
         (*block).next = None;
         (*block).empty = false;
     }
-    libc_eprintln!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (raw_size={})", requested, raw_size);
+    libc_eprintln!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (meta_size={}, raw_size={})", requested, BLOCK_META_SIZE, raw_size);
     assert_eq!(block as *mut c_void, requested);
     update_heap(block);
     Some(block)
@@ -54,8 +52,14 @@ fn update_heap(block: *mut BlockMeta) {
     }
 }
 
-pub fn get_block_ptr(ptr: *mut c_void) -> *mut BlockMeta {
+/// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
+pub fn get_block_meta(ptr: *mut c_void) -> *mut BlockMeta {
     unsafe {(ptr as *mut BlockMeta).offset(-1)}
+}
+
+/// Returns a pointer to the assigned memory region for the given block
+pub fn get_mem_region(block: *mut BlockMeta) -> *mut c_void {
+    unsafe { block.offset(1) as *mut c_void }
 }
 
 fn sbrk(size: isize) -> Option<*mut c_void> {

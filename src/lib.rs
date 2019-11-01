@@ -8,8 +8,9 @@ use core::panic::PanicInfo;
 
 use libc::{size_t, c_void};
 use libc_print::libc_eprintln;
-use crate::meta::{alloc_block, get_block_ptr, reuse_block};
 use core::{cmp, intrinsics, ptr};
+
+use crate::meta::{alloc_block, get_block_meta, reuse_block, get_mem_region};
 
 mod macros;
 mod meta;
@@ -24,14 +25,14 @@ pub extern "C" fn malloc(size: size_t) -> *mut c_void {
 
     // Reuse a free block if applicable
     if let Some(block) = reuse_block(size) {
-        let pointer = unsafe { (*block).start };
+        let pointer = get_mem_region(block);
         libc_eprintln!("[libdmalloc.so] malloc: reusing block at {:?}", pointer);
         return pointer;
     }
 
     // Allocate new block with required size
     if let Some(block) = alloc_block(size) {
-        let pointer = unsafe { (*block).start };
+        let pointer = get_mem_region(block);
         libc_eprintln!("[libdmalloc.so] malloc: allocated {} bytes at {:?}", size, pointer);
         return pointer;
     }
@@ -55,11 +56,11 @@ pub extern "C" fn realloc(p: *mut c_void, size: size_t) -> *mut c_void {
         return malloc(size);
     }
 
-    let block = get_block_ptr(p);
+    let block = get_block_meta(p);
     let new_ptr = malloc(size);
     unsafe {
         // TODO: don't reuse blocks and use copy_nonoverlapping
-        ptr::copy((*block).start, new_ptr, cmp::min(size, (*block).size));
+        ptr::copy(p, new_ptr, cmp::min(size, (*block).size));
     }
     free(p);
     libc_eprintln!("[libdmalloc.so] realloc: reallocated {} bytes at {:?}\n", size, p);
@@ -72,7 +73,7 @@ pub extern "C" fn free(pointer: *mut c_void) {
     if pointer.is_null() {
         return
     }
-    let block = get_block_ptr(pointer);
+    let block = get_block_meta(pointer);
     unsafe {
         assert_eq!((*block).empty, false);
         (*block).empty = true;
