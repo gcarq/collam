@@ -1,4 +1,4 @@
-use core::intrinsics;
+use core::{intrinsics, fmt};
 use core::ffi::c_void;
 use libc_print::libc_eprintln;
 
@@ -10,8 +10,15 @@ static mut HEAD: Option<*mut BlockMeta> = None;
 pub struct BlockMeta {
     pub size: usize,
     pub next: Option<*mut BlockMeta>,
-    pub empty: bool,
+    pub unused: bool,
 }
+
+impl fmt::Display for BlockMeta {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "BlockMeta(size={}, next={:?}, unused={})", self.size, self.next, self.unused)
+    }
+}
+
 
 pub fn alloc_block(size: usize) -> Option<* mut BlockMeta> {
     let block = sbrk(0)? as *mut BlockMeta;
@@ -20,10 +27,10 @@ pub fn alloc_block(size: usize) -> Option<* mut BlockMeta> {
     unsafe {
         (*block).size = size;
         (*block).next = None;
-        (*block).empty = false;
+        (*block).unused = false;
+        assert_eq!(block as *mut c_void, requested, "{} at {:?}", *block, block);
     }
-    libc_eprintln!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (meta_size={}, raw_size={})", requested, BLOCK_META_SIZE, raw_size);
-    assert_eq!(block as *mut c_void, requested);
+    //libc_eprintln!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (meta_size={}, raw_size={})", requested, BLOCK_META_SIZE, raw_size);
     update_heap(block);
     Some(block)
 }
@@ -33,8 +40,8 @@ pub fn reuse_block(size: usize) -> Option<*mut BlockMeta> {
     while let Some(block) = cur_block {
         unsafe {
             //libc_println!("[libdmalloc.so] DEBUG: reuse_block() checking {:?} (empty={}, size={}, next={:?})", block, (*block).empty, (*block).size, (*block).next);
-            if (*block).empty && size <= (*block).size {
-                (*block).empty = false;
+            if (*block).unused && size <= (*block).size {
+                (*block).unused = false;
                 return Some(block);
             }
             cur_block = (*block).next;

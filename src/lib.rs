@@ -11,82 +11,100 @@ use core::ffi::c_void;
 use core::{cmp, intrinsics, ptr};
 
 use crate::meta::{alloc_block, get_block_meta, reuse_block, get_mem_region};
+use crate::mutex::Mutex;
 
 mod macros;
 mod meta;
 mod util;
+mod mutex;
 
+pub static MUTEX: Mutex = Mutex::new();
 
 #[no_mangle]
 pub extern "C" fn malloc(size: usize) -> *mut c_void {
-    if size == 0 {
-        return ptr::null_mut::<c_void>();
-    }
-
-    // Reuse a free block if applicable
-    if let Some(block) = reuse_block(size) {
-        let pointer = get_mem_region(block);
-        libc_eprintln!("[libdmalloc.so] malloc: reusing block at {:?}", pointer);
-        return pointer;
-    }
-
-    // Allocate new block with required size
-    if let Some(block) = alloc_block(size) {
-        let pointer = get_mem_region(block);
-        libc_eprintln!("[libdmalloc.so] malloc: allocated {} bytes at {:?}", size, pointer);
-        return pointer;
-    }
-
-    libc_eprintln!("[libdmalloc.so] malloc failed. retuning NULL!");
-    return ptr::null_mut::<c_void>();
+    return alloc(size);
 }
 
 #[no_mangle]
 pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     // TODO: check for int overflow
     let total_size = nobj * size;
-    let pointer = malloc(total_size);
+    let pointer = alloc(total_size);
+    MUTEX.lock();
     unsafe { ptr::write_bytes(pointer, 0, total_size); }
+    MUTEX.unlock();
     pointer
 }
 
 #[no_mangle]
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
+    let new_ptr = alloc(size);
+
+    // If passed pointer is NULL, just return newly allocated ptr
     if p.is_null() {
-        return malloc(size);
+        return new_ptr;
     }
 
     let block = get_block_meta(p);
-    let new_ptr = malloc(size);
+    MUTEX.lock();
     unsafe {
         // TODO: don't reuse blocks and use copy_nonoverlapping
-        ptr::copy(p, new_ptr, cmp::min(size, (*block).size));
+        let copy_size = cmp::min(size, (*block).size);
+        new_ptr.copy_from(p, copy_size);
+        for i in 0..copy_size {
+            assert_eq!(*(p as *mut u8).offset(i as isize), *(new_ptr as *mut u8).offset(i as isize));
+        }
     }
+    MUTEX.unlock();
     free(p);
-    libc_eprintln!("[libdmalloc.so] realloc: reallocated {} bytes at {:?}\n", size, p);
+    //libc_eprintln!("[libdmalloc.so] realloc: reallocated {} bytes at {:?}\n", size, p);
     new_ptr
 }
 
 #[no_mangle]
 pub extern "C" fn free(pointer: *mut c_void) {
-    libc_eprintln!("[libdmalloc.so] free: dropping {:?}\n", pointer);
+    //libc_eprintln!("[libdmalloc.so] free: dropping {:?}\n", pointer);
     if pointer.is_null() {
         return
     }
+
+    MUTEX.lock();
     let block = get_block_meta(pointer);
     unsafe {
-        assert_eq!((*block).empty, false);
-        (*block).empty = true;
+        assert_eq!((*block).unused, false, "{} at {:?}", *block, block);
+        (*block).unused = true;
     }
+    MUTEX.unlock();
+}
+
+fn alloc(size: usize) -> *mut c_void {
+    if size == 0 {
+        return ptr::null_mut::<c_void>();
+    }
+
+    MUTEX.lock();
+    let pointer = if let Some(block) = reuse_block(size) {
+        get_mem_region(block)
+    } else if let Some(block) = alloc_block(size) {
+        get_mem_region(block)
+    } else {
+        libc_eprintln!("[libdmalloc.so] malloc failed. retuning NULL!");
+        ptr::null_mut::<c_void>()
+    };
+
+    let block = get_block_meta(pointer);
+    unsafe {
+        assert_eq!((*block).unused, false);
+        assert!((*block).size > 0);
+    }
+
+    MUTEX.unlock();
+    return pointer;
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    if let Some(s) = info.payload().downcast_ref::<&str>() {
-        libc_eprintln!("panic occurred: {:?}", s);
-    } else {
-        libc_eprintln!("panic occurred");
-    }
+    libc_eprintln!("panic occurred: {:?}", info);
     unsafe { intrinsics::abort() }
 }
 
