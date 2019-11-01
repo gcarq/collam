@@ -31,7 +31,9 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     let total_size = nobj * size;
     let pointer = alloc(total_size);
     MUTEX.lock();
-    unsafe { ptr::write_bytes(pointer, 0, total_size); }
+    unsafe {
+        pointer.write_bytes(0, total_size);
+    }
     MUTEX.unlock();
     pointer
 }
@@ -39,17 +41,16 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 #[no_mangle]
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     let new_ptr = alloc(size);
-
     // If passed pointer is NULL, just return newly allocated ptr
     if p.is_null() {
         return new_ptr;
     }
 
-    let block = get_block_meta(p);
+    let old_block = get_block_meta(p);
     MUTEX.lock();
     unsafe {
         // TODO: don't reuse blocks and use copy_nonoverlapping
-        let copy_size = cmp::min(size, (*block).size);
+        let copy_size = cmp::min(size, (*old_block).size);
         new_ptr.copy_from(p, copy_size);
         for i in 0..copy_size {
             assert_eq!(*(p as *mut u8).offset(i as isize), *(new_ptr as *mut u8).offset(i as isize));
@@ -88,16 +89,8 @@ fn alloc(size: usize) -> *mut c_void {
     } else if let Some(block) = alloc_block(size) {
         get_mem_region(block)
     } else {
-        libc_eprintln!("[libdmalloc.so] malloc failed. retuning NULL!");
         ptr::null_mut::<c_void>()
     };
-
-    let block = get_block_meta(pointer);
-    unsafe {
-        assert_eq!((*block).unused, false);
-        assert!((*block).size > 0);
-    }
-
     MUTEX.unlock();
     return pointer;
 }
