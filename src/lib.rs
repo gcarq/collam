@@ -6,8 +6,8 @@ extern crate libc_print;
 
 use core::panic::PanicInfo;
 
-use libc::{size_t, c_void};
 use libc_print::libc_eprintln;
+use core::ffi::c_void;
 use core::{cmp, intrinsics, ptr};
 
 use crate::meta::{alloc_block, get_block_meta, reuse_block, get_mem_region};
@@ -18,7 +18,7 @@ mod util;
 
 
 #[no_mangle]
-pub extern "C" fn malloc(size: size_t) -> *mut c_void {
+pub extern "C" fn malloc(size: usize) -> *mut c_void {
     if size == 0 {
         return ptr::null_mut::<c_void>();
     }
@@ -42,7 +42,7 @@ pub extern "C" fn malloc(size: size_t) -> *mut c_void {
 }
 
 #[no_mangle]
-pub extern "C" fn calloc(nobj: size_t, size: size_t) -> *mut c_void {
+pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     // TODO: check for int overflow
     let total_size = nobj * size;
     let pointer = malloc(total_size);
@@ -51,7 +51,7 @@ pub extern "C" fn calloc(nobj: size_t, size: size_t) -> *mut c_void {
 }
 
 #[no_mangle]
-pub extern "C" fn realloc(p: *mut c_void, size: size_t) -> *mut c_void {
+pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         return malloc(size);
     }

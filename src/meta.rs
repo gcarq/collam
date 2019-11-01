@@ -1,5 +1,5 @@
 use core::intrinsics;
-use libc::c_void;
+use core::ffi::c_void;
 use libc_print::libc_eprintln;
 
 
