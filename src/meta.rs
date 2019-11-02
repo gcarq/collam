@@ -1,6 +1,6 @@
 use core::{intrinsics, fmt};
 use core::ffi::c_void;
-use libc_print::libc_eprintln;
+//use libc_print::libc_eprintln;
 
 
 pub const BLOCK_META_SIZE: usize = intrinsics::size_of::<BlockMeta>();
@@ -60,11 +60,13 @@ fn update_heap(block: *mut BlockMeta) {
 }
 
 /// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
+#[inline]
 pub fn get_block_meta(ptr: *mut c_void) -> *mut BlockMeta {
     unsafe {(ptr as *mut BlockMeta).offset(-1)}
 }
 
 /// Returns a pointer to the assigned memory region for the given block
+#[inline]
 pub fn get_mem_region(block: *mut BlockMeta) -> *mut c_void {
     unsafe { block.offset(1) as *mut c_void }
 }
