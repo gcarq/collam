@@ -1,74 +1,55 @@
-use core::{intrinsics, fmt};
 use core::ffi::c_void;
-//use libc_print::libc_eprintln;
+use core::ptr;
 
+use libc_print::libc_eprintln;
 
-pub const BLOCK_META_SIZE: usize = intrinsics::size_of::<BlockMeta>();
-static mut HEAD: Option<*mut BlockMeta> = None;
+use crate::heap::list::{get_mem_region, BlockRegion, BLOCK_REGION_META_SIZE};
+use crate::util::alloc_unit;
+use crate::{heap, MUTEX};
 
-#[repr(C)]
-pub struct BlockMeta {
-    pub size: usize,
-    pub next: Option<*mut BlockMeta>,
-    pub unused: bool,
-}
-
-impl fmt::Display for BlockMeta {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "BlockMeta(size={}, next={:?}, unused={})", self.size, self.next, self.unused)
+pub fn alloc(size: usize) -> *mut c_void {
+    if size == 0 {
+        return ptr::null_mut();
     }
-}
 
+    let size = size.next_power_of_two();
 
-pub fn alloc_block(size: usize) -> Option<* mut BlockMeta> {
-    let block = sbrk(0)? as *mut BlockMeta;
-    let raw_size = (BLOCK_META_SIZE + size).next_power_of_two();
-    let requested = sbrk(raw_size as isize)?;
+    let _lock = MUTEX.lock(); // lock gets dropped implicitly
+    log!("[libdmalloc.so]: alloc(size={})", size);
+    // Check if there is already a suitable block allocated
+    let block = if let Some(block) = heap::find_suitable_block(size) {
+        heap::remove(block);
+        block
+    // Request new block from kernel
+    } else if let Some(block) = request_block(size) {
+        if let Some(rem_block) = heap::split(block, size) {
+            heap::insert(rem_block);
+        }
+        block
+    } else {
+        return ptr::null_mut();
+    };
+
+    unsafe { (*block).used = true }
+
+    // Check if it makes sense to split block into smaller chunks
+    //heap::split(block, size);
+    heap::stat();
     unsafe {
-        (*block).size = size;
-        (*block).next = None;
-        (*block).unused = false;
-        assert_eq!(block as *mut c_void, requested, "{} at {:?}", *block, block);
+        log!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
+        assert!((*block).size >= size, "requested={}, got={}", size, *block);
     }
-    //libc_eprintln!("[libdmalloc.so] DEBUG: alloc_block() BlockMeta starts at {:?} (meta_size={}, raw_size={})", requested, BLOCK_META_SIZE, raw_size);
-    update_heap(block);
+    return get_mem_region(block);
+}
+
+/// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
+fn request_block(size: usize) -> Option<*mut BlockRegion> {
+    let alloc_unit = alloc_unit(BLOCK_REGION_META_SIZE + size);
+    let block = sbrk(alloc_unit)?.cast::<BlockRegion>();
+    unsafe {
+        (*block) = BlockRegion::new(alloc_unit as usize);
+    }
     Some(block)
-}
-
-pub fn reuse_block(size: usize) -> Option<*mut BlockMeta> {
-    let mut cur_block = unsafe { HEAD };
-    while let Some(block) = cur_block {
-        unsafe {
-            //libc_println!("[libdmalloc.so] DEBUG: reuse_block() checking {:?} (empty={}, size={}, next={:?})", block, (*block).empty, (*block).size, (*block).next);
-            if (*block).unused && size <= (*block).size {
-                (*block).unused = false;
-                return Some(block);
-            }
-            cur_block = (*block).next;
-        }
-    }
-    None
-}
-
-fn update_heap(block: *mut BlockMeta) {
-    unsafe {
-        match HEAD {
-            None => HEAD = Some(block),
-            Some(b) => {(*b).next = Some(block)}
-        }
-    }
-}
-
-/// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
-#[inline]
-pub fn get_block_meta(ptr: *mut c_void) -> *mut BlockMeta {
-    unsafe {(ptr as *mut BlockMeta).offset(-1)}
-}
-
-/// Returns a pointer to the assigned memory region for the given block
-#[inline]
-pub fn get_mem_region(block: *mut BlockMeta) -> *mut c_void {
-    unsafe { block.offset(1) as *mut c_void }
 }
 
 fn sbrk(size: isize) -> Option<*mut c_void> {

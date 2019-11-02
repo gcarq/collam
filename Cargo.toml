@@ -18,4 +18,9 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+opt-level = 3
+debug = false
 lto = true
+debug-assertions = false
+codegen-units = 16
+overflow-checks = false
