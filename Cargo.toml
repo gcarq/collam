@@ -12,3 +12,9 @@ crate-type = ["dylib"]
 libc = "0.2"
 libc-print = "0.1.11"
 spin = "0.5.2"
+
+[profile.release]
+panic="abort"
+
+[profile.dev]
+panic="abort"

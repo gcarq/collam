@@ -26,8 +26,10 @@ pub extern "C" fn malloc(size: usize) -> *mut c_void {
 #[no_mangle]
 pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     //libc_eprintln!("[libdmalloc.so] calloc (nobj={}, size={})", nobj, size);;
-    // TODO: check for int overflow
-    let total_size = nobj * size;
+    let total_size = match nobj.checked_mul(size) {
+        Some(x) => x,
+        None => panic!("integer overflow detected (nobj={}, size={})", nobj, size),
+    };
     let pointer = alloc(total_size);
 
     let _lock = MUTEX.lock(); // lock gets dropped implicitly
