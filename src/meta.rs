@@ -30,7 +30,6 @@ pub fn alloc(size: usize) -> *mut c_void {
     }
 
     unsafe {
-        heap::debug();
         log!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
         assert!((*block).size >= size, "requested={}, got={}", size, *block);
         return get_mem_region(block);

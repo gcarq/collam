@@ -7,7 +7,7 @@ use crate::heap::list::IntrusiveList;
 
 mod list;
 
-static mut HEAP: IntrusiveList = IntrusiveList::new();
+static HEAP: spin::Mutex<IntrusiveList> = spin::Mutex::new(IntrusiveList::new());
 pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
 
 #[repr(C)]
@@ -54,23 +54,20 @@ impl fmt::Display for BlockRegion {
 #[inline]
 pub unsafe fn insert(block: *mut BlockRegion) {
     log!("[insert]: {} at {:?}", *block, block);
-    HEAP.insert(block);
+    let mut heap = HEAP.lock();
+    heap.insert(block);
+    //if cfg!(debug_assertions) {
+    heap.debug();
+    //}
 }
 
 /// Removes and returns a suitable empty block from the heap structure.
 #[inline]
 pub unsafe fn pop(size: usize) -> Option<*mut BlockRegion> {
-    let block = HEAP.pop(size)?;
+    let mut heap = HEAP.lock();
+    let block = heap.pop(size)?;
     log!("[pop]: {} at {:?}", *block, block);
     return Some(block);
-}
-
-/// Prints some debugging information about the heap structure
-#[inline]
-pub unsafe fn debug() {
-    //if cfg!(debug_assertions) {
-    HEAP.debug()
-    //}
 }
 
 /// Returns a pointer to the BlockMeta struct from the given memory region raw pointer

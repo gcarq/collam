@@ -7,6 +7,8 @@ pub struct IntrusiveList {
     tail: Option<*mut BlockRegion>,
 }
 
+unsafe impl core::marker::Send for IntrusiveList {}
+
 impl IntrusiveList {
     pub const fn new() -> Self {
         IntrusiveList {
@@ -81,11 +83,23 @@ impl IntrusiveList {
         (*elem).prev = None;
     }
 
+    /// Prints some debugging information about the heap structure
     pub fn debug(&self) {
         for (i, item) in self.into_iter().enumerate() {
             unsafe {
-                (*item).verify();
                 log!("[debug]: pos: {}\t{} at\t{:?}", i, *item, item);
+                (*item).verify();
+
+                match (*item).prev {
+                    Some(prev) => assert_eq!((*prev).next.unwrap(), item),
+                    None => assert_eq!(self.head.unwrap(), item),
+                }
+
+                match (*item).next {
+                    Some(next) => assert_eq!((*next).prev.unwrap(), item),
+                    None => assert_eq!(self.tail.unwrap(), item),
+                }
+
                 //TODO:
                 /*if let Some(next) = (*elem).next {
                     assert!(elem < next);
