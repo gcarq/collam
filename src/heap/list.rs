@@ -1,18 +1,5 @@
-use core::fmt;
-
-use crate::heap::{BlockRegion, BLOCK_REGION_META_SIZE};
-use core::ffi::c_void;
+use crate::heap::BlockRegion;
 use libc_print::libc_eprintln;
-
-impl fmt::Display for BlockRegion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "BlockRegion(size={}, prev={:?}, next={:?}, meta_size={})",
-            self.size, self.prev, self.next, BLOCK_REGION_META_SIZE,
-        )
-    }
-}
 
 #[derive(Copy, Clone)]
 pub struct IntrusiveList {

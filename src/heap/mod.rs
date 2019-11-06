@@ -1,5 +1,5 @@
 use core::ffi::c_void;
-use core::mem;
+use core::{fmt, mem};
 
 use libc_print::libc_eprintln;
 
@@ -23,6 +23,16 @@ impl BlockRegion {
             next: None,
             prev: None,
         }
+    }
+}
+
+impl fmt::Display for BlockRegion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "BlockRegion(size={}, prev={:?}, next={:?}, meta_size={})",
+            self.size, self.prev, self.next, BLOCK_REGION_META_SIZE,
+        )
     }
 }
 
