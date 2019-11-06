@@ -19,4 +19,4 @@ cargo build --release
 gcc test.c -o ${TMP_DIR}/test
 
 # Start test executable
-LD_PRELOAD=target/${CHANNEL}/libdmalloc.so "${EXECUTABLE}"
+time LD_PRELOAD=target/${CHANNEL}/libdmalloc.so "${EXECUTABLE}"

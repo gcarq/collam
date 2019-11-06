@@ -22,18 +22,15 @@ pub fn alloc(size: usize) -> *mut c_void {
         block
     // Request new block from kernel
     } else if let Some(block) = request_block(size) {
-        if let Some(rem_block) = heap::split(block, size) {
-            heap::insert(rem_block);
-        }
         block
     } else {
         return ptr::null_mut();
     };
 
-    unsafe { (*block).used = true }
+    if let Some(rem_block) = heap::split(block, size) {
+        heap::insert(rem_block);
+    }
 
-    // Check if it makes sense to split block into smaller chunks
-    //heap::split(block, size);
     heap::stat();
     unsafe {
         log!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);

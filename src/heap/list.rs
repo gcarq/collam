@@ -6,7 +6,6 @@ use libc_print::libc_eprintln;
 #[repr(C)]
 pub struct BlockRegion {
     pub size: usize,
-    pub used: bool,
     next: Option<*mut BlockRegion>,
     prev: Option<*mut BlockRegion>,
 }
@@ -15,7 +14,6 @@ impl BlockRegion {
     pub fn new(size: usize) -> Self {
         BlockRegion {
             size,
-            used: false,
             next: None,
             prev: None,
         }
@@ -127,10 +125,8 @@ impl IntrusiveList {
     }
 
     /// Removes the given element from the list.
-    pub fn remove(&self, elem: *mut BlockRegion) {
+    pub fn remove(&mut self, elem: *mut BlockRegion) {
         unsafe {
-            //assert!((*elem).prev != None || (*elem).next != None);
-
             // Remove link in previous element
             if let Some(prev) = (*elem).prev {
                 (*prev).next = (*elem).next;
@@ -141,6 +137,20 @@ impl IntrusiveList {
                 (*next).prev = (*elem).prev;
             }
 
+            // Adapt head & tail
+            if let Some(head) = self.head {
+                if elem == head {
+                    self.head = (*elem).next;
+                }
+            }
+
+            if let Some(tail) = self.tail {
+                if elem == tail {
+                    self.tail = (*elem).prev;
+                }
+            }
+
+            // Clear links in current element
             (*elem).next = None;
             (*elem).prev = None;
         }
@@ -162,7 +172,7 @@ impl IntrusiveList {
     pub fn find_block(&self, size: usize) -> Option<*mut BlockRegion> {
         for block in self.into_iter() {
             unsafe {
-                if !(*block).used && size <= (*block).size {
+                if size <= (*block).size {
                     log!(
                         "[libdmalloc.so]: found suitable {} at {:?} for size {}",
                         *block,
