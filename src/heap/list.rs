@@ -1,26 +1,8 @@
-use core::{fmt, mem};
+use core::fmt;
 
+use crate::heap::{BlockRegion, BLOCK_REGION_META_SIZE};
 use core::ffi::c_void;
 use libc_print::libc_eprintln;
-
-#[repr(C)]
-pub struct BlockRegion {
-    pub size: usize,
-    next: Option<*mut BlockRegion>,
-    prev: Option<*mut BlockRegion>,
-}
-
-impl BlockRegion {
-    pub fn new(size: usize) -> Self {
-        BlockRegion {
-            size,
-            next: None,
-            prev: None,
-        }
-    }
-}
-
-pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
 
 impl fmt::Display for BlockRegion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -81,47 +63,6 @@ impl IntrusiveList {
                 self.tail = Some(to_insert);
             }
         }
-    }
-
-    /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
-    /// Returns a newly created block with the remaining size or None if split is not possible.
-    pub fn split(&self, block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
-        unsafe { log!("[split]: {} at {:?}", *block, block) }
-
-        // Align pointer of new block
-        let new_blk_offset = (BLOCK_REGION_META_SIZE + size + 1).next_power_of_two();
-        // Check if its possible to split the block with the requested size
-        let new_blk_size = unsafe { (*block).size }
-            .checked_sub(new_blk_offset)?
-            .checked_sub(BLOCK_REGION_META_SIZE)?;
-        if new_blk_size == 0 {
-            log!("      -> None");
-            return None;
-        }
-
-        unsafe {
-            assert!(
-                new_blk_offset + BLOCK_REGION_META_SIZE < (*block).size,
-                "(left={}, right={})",
-                new_blk_offset + BLOCK_REGION_META_SIZE,
-                (*block).size
-            );
-
-            // Update size for old block
-            (*block).size = size;
-
-            // Create block with remaining size
-            let new_block = block
-                .cast::<c_void>()
-                .offset(new_blk_offset as isize)
-                .cast::<BlockRegion>();
-            *new_block = BlockRegion::new(new_blk_size);
-
-            log!("      -> {} at {:?}", *block, block);
-            log!("      -> {} at {:?}", *new_block, new_block);
-
-            return Some(new_block);
-        };
     }
 
     /// Removes the given element from the list.
@@ -211,16 +152,4 @@ impl Iterator for ListIntoIter {
         }
         return cur;
     }
-}
-
-/// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
-#[inline]
-pub fn get_block_meta(ptr: *mut c_void) -> *mut BlockRegion {
-    unsafe { ptr.cast::<BlockRegion>().offset(-1) }
-}
-
-/// Returns a pointer to the assigned memory region for the given block
-#[inline]
-pub fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
-    unsafe { block.offset(1).cast::<c_void>() }
 }

@@ -10,7 +10,7 @@ use core::{cmp, intrinsics, panic};
 
 use libc_print::libc_eprintln;
 
-use crate::heap::list::get_block_meta;
+use crate::heap::get_block_meta;
 use crate::meta::alloc;
 
 mod macros;

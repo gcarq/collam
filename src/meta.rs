@@ -3,7 +3,7 @@ use core::ptr;
 
 use libc_print::libc_eprintln;
 
-use crate::heap::list::{get_mem_region, BlockRegion, BLOCK_REGION_META_SIZE};
+use crate::heap::{get_mem_region, BlockRegion, BLOCK_REGION_META_SIZE};
 use crate::util::alloc_unit;
 use crate::{heap, MUTEX};
 
@@ -17,7 +17,7 @@ pub fn alloc(size: usize) -> *mut c_void {
     let _lock = MUTEX.lock(); // lock gets dropped implicitly
     log!("[libdmalloc.so]: alloc(size={})", size);
     // Check if there is already a suitable block allocated
-    let block = if let Some(block) = heap::find_suitable_block(size) {
+    let block = if let Some(block) = heap::find(size) {
         heap::remove(block);
         block
     // Request new block from kernel
@@ -31,7 +31,7 @@ pub fn alloc(size: usize) -> *mut c_void {
         heap::insert(rem_block);
     }
 
-    heap::stat();
+    heap::debug();
     unsafe {
         log!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
         assert!((*block).size >= size, "requested={}, got={}", size, *block);
