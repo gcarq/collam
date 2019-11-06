@@ -6,7 +6,7 @@ extern crate libc_print;
 extern crate spin;
 
 use core::ffi::c_void;
-use core::{cmp, intrinsics, panic};
+use core::{cmp, intrinsics, panic, ptr};
 
 use libc_print::libc_eprintln;
 
@@ -39,16 +39,32 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 
 #[no_mangle]
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
-    let new_ptr = alloc(size);
-    // If passed pointer is NULL, just return newly allocated ptr
     if p.is_null() {
-        return new_ptr;
+        // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size
+        return alloc(size);
+    } else if size == 0 {
+        // if size is equal to zero, and ptr is not NULL,
+        // then the call is equivalent to free(ptr)
+        free(p);
+        return ptr::null_mut();
     }
 
-    let old_block = get_block_meta(p);
-    // TODO: don't reuse blocks and use copy_nonoverlapping
+    let new_ptr = alloc(size);
     let lock = MUTEX.lock();
-    unsafe { new_ptr.copy_from(p, cmp::min(size, (*old_block).size)) }
+    unsafe {
+        let old_block = get_block_meta(p);
+        let new_blk = get_block_meta(new_ptr);
+        let cpy_size = cmp::min(size, (*old_block).size);
+        libc_eprintln!(
+            "[realloc] Copying {} bytes from {:?} to {:?}...",
+            cpy_size,
+            old_block,
+            new_blk
+        );
+        libc_eprintln!("    from -> {} at {:?}", *old_block, old_block);
+        libc_eprintln!("      to -> {} at {:?}", *new_blk, new_blk);
+        ptr::copy(p, new_ptr, cpy_size);
+    }
     drop(lock);
 
     free(p);
@@ -62,7 +78,7 @@ pub extern "C" fn free(pointer: *mut c_void) {
     }
 
     let _lock = MUTEX.lock(); // lock gets dropped implicitly
-    let block = get_block_meta(pointer);
+    let block = unsafe { get_block_meta(pointer) };
     // Re-add block to list
     heap::insert(block);
 }

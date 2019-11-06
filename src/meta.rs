@@ -12,13 +12,11 @@ pub fn alloc(size: usize) -> *mut c_void {
         return ptr::null_mut();
     }
 
-    let size = size.next_power_of_two();
-
     let _lock = MUTEX.lock(); // lock gets dropped implicitly
     log!("[libdmalloc.so]: alloc(size={})", size);
+    let size = size.next_power_of_two();
     // Check if there is already a suitable block allocated
-    let block = if let Some(block) = heap::find(size) {
-        heap::remove(block);
+    let block = if let Some(block) = heap::pop(size) {
         block
     // Request new block from kernel
     } else if let Some(block) = request_block(size) {
@@ -36,7 +34,7 @@ pub fn alloc(size: usize) -> *mut c_void {
         log!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
         assert!((*block).size >= size, "requested={}, got={}", size, *block);
     }
-    return get_mem_region(block);
+    return unsafe { get_mem_region(block) };
 }
 
 /// Requests memory from kernel and returns a pointer to the newly created BlockMeta.

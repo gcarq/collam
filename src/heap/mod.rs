@@ -32,7 +32,10 @@ impl BlockRegion {
     #[inline]
     pub fn verify(&self) {
         if self.magic != 0xBADC0DED {
-            panic!("magic value does not match (got=0x{:X}, expected=0xBADC0DED)", self.magic)
+            panic!(
+                "magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
+                self.magic
+            )
         }
     }
 }
@@ -56,19 +59,15 @@ pub fn insert(block: *mut BlockRegion) {
     }
 }
 
-/// Removes the given block from the heap
+/// Removes and returns a suitable empty block from the heap structure.
 #[inline]
-pub fn remove(block: *mut BlockRegion) {
+pub fn pop(size: usize) -> Option<*mut BlockRegion> {
     unsafe {
-        log!("[remove]: {} at {:?}", *block, block);
+        let block = HEAP.find(size)?;
         HEAP.remove(block);
+        log!("[pop]: {} at {:?}", *block, block);
+        return Some(block);
     }
-}
-
-/// Returns a suitable empty block from the heap structure
-#[inline]
-pub fn find(size: usize) -> Option<*mut BlockRegion> {
-    unsafe { HEAP.find(size) }
 }
 
 /// Prints some debugging information about the heap structure
@@ -81,21 +80,17 @@ pub fn debug() {
 
 /// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
 #[inline]
-pub fn get_block_meta(ptr: *mut c_void) -> *mut BlockRegion {
-    unsafe {
-        let block = ptr.cast::<BlockRegion>().offset(-1);
-        (*block).verify();
-        return block;
-    }
+pub unsafe fn get_block_meta(ptr: *mut c_void) -> *mut BlockRegion {
+    let block = ptr.cast::<BlockRegion>().offset(-1);
+    (*block).verify();
+    return block;
 }
 
 /// Returns a pointer to the assigned memory region for the given block
 #[inline]
-pub fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
-    unsafe {
-        (*block).verify();
-        return block.offset(1).cast::<c_void>();
-    }
+pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
+    (*block).verify();
+    return block.offset(1).cast::<c_void>();
 }
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).

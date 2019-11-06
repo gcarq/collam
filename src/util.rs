@@ -1,4 +1,5 @@
 use core::ffi::c_void;
+use core::mem;
 
 /// Returns a fixed number of bytes that is larger than min_size and
 /// a multiple of _SC_PAGESIZE
@@ -19,4 +20,9 @@ pub fn alloc_unit(min_size: usize) -> isize {
 #[inline]
 pub fn get_program_break() -> *mut c_void {
     unsafe { libc::sbrk(0) }
+}
+
+#[inline]
+pub fn is_aligned(ptr: *mut c_void) -> bool {
+    ptr.align_offset(mem::size_of::<usize>()) == 0
 }
