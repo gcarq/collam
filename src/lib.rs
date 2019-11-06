@@ -69,7 +69,7 @@ pub extern "C" fn free(pointer: *mut c_void) {
 
 #[panic_handler]
 fn panic(info: &panic::PanicInfo) -> ! {
-    log!("panic occurred: {:?}", info);
+    libc_eprintln!("panic occurred: {:?}", info);
     unsafe { intrinsics::abort() }
 }
 

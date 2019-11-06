@@ -13,16 +13,26 @@ pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
 #[repr(C)]
 pub struct BlockRegion {
     pub size: usize,
+    pub magic: u32,
     next: Option<*mut BlockRegion>,
     prev: Option<*mut BlockRegion>,
 }
 
 impl BlockRegion {
-    pub fn new(size: usize) -> Self {
+    #[inline]
+    pub const fn new(size: usize) -> Self {
         BlockRegion {
             size,
             next: None,
             prev: None,
+            magic: 0xBADC0DED,
+        }
+    }
+
+    #[inline]
+    pub fn verify(&self) {
+        if self.magic != 0xBADC0DED {
+            panic!("magic value does not match (got=0x{:X}, expected=0xBADC0DED)", self.magic)
         }
     }
 }
@@ -31,8 +41,8 @@ impl fmt::Display for BlockRegion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "BlockRegion(size={}, prev={:?}, next={:?}, meta_size={})",
-            self.size, self.prev, self.next, BLOCK_REGION_META_SIZE,
+            "BlockRegion(size={}, prev={:?}, next={:?}, magic=0x{:X}, meta_size={})",
+            self.size, self.prev, self.next, self.magic, BLOCK_REGION_META_SIZE,
         )
     }
 }
@@ -64,21 +74,28 @@ pub fn find(size: usize) -> Option<*mut BlockRegion> {
 /// Prints some debugging information about the heap structure
 #[inline]
 pub fn debug() {
-    if cfg!(debug_assertions) {
-        unsafe { HEAP.debug() }
-    }
+    //if cfg!(debug_assertions) {
+    unsafe { HEAP.debug() }
+    //}
 }
 
 /// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
 #[inline]
 pub fn get_block_meta(ptr: *mut c_void) -> *mut BlockRegion {
-    unsafe { ptr.cast::<BlockRegion>().offset(-1) }
+    unsafe {
+        let block = ptr.cast::<BlockRegion>().offset(-1);
+        (*block).verify();
+        return block;
+    }
 }
 
 /// Returns a pointer to the assigned memory region for the given block
 #[inline]
 pub fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
-    unsafe { block.offset(1).cast::<c_void>() }
+    unsafe {
+        (*block).verify();
+        return block.offset(1).cast::<c_void>();
+    }
 }
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).

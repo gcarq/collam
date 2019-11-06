@@ -88,6 +88,7 @@ impl IntrusiveList {
     pub fn debug(&self) {
         for (i, item) in self.into_iter().enumerate() {
             unsafe {
+                (*item).verify();
                 log!("[debug]: pos: {}\t{} at\t{:?}", i, *item, item);
                 //TODO:
                 /*if let Some(next) = (*elem).next {
