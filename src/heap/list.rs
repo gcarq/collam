@@ -55,23 +55,24 @@ impl IntrusiveList {
     /// Removes the given element from the list.
     pub fn remove(&mut self, elem: *mut BlockRegion) {
         unsafe {
-            // Remove link in previous element
+            // Update link in previous element
             if let Some(prev) = (*elem).prev {
                 (*prev).next = (*elem).next;
             }
 
-            // Remove link in next element
+            // Update link in next element
             if let Some(next) = (*elem).next {
                 (*next).prev = (*elem).prev;
             }
 
-            // Adapt head & tail
+            // Update head
             if let Some(head) = self.head {
                 if elem == head {
                     self.head = (*elem).next;
                 }
             }
 
+            // Update tail
             if let Some(tail) = self.tail {
                 if elem == tail {
                     self.tail = (*elem).prev;
@@ -97,7 +98,7 @@ impl IntrusiveList {
     }
 
     /// Returns the first suitable block found
-    pub fn find_block(&self, size: usize) -> Option<*mut BlockRegion> {
+    pub fn find(&self, size: usize) -> Option<*mut BlockRegion> {
         for block in self.into_iter() {
             unsafe {
                 if size <= (*block).size {

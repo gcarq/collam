@@ -8,6 +8,7 @@ use crate::heap::list::IntrusiveList;
 mod list;
 
 static mut HEAP: IntrusiveList = IntrusiveList::new();
+pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
 
 #[repr(C)]
 pub struct BlockRegion {
@@ -36,8 +37,6 @@ impl fmt::Display for BlockRegion {
     }
 }
 
-pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
-
 /// Inserts a block to the heap structure
 #[inline]
 pub fn insert(block: *mut BlockRegion) {
@@ -59,7 +58,7 @@ pub fn remove(block: *mut BlockRegion) {
 /// Returns a suitable empty block from the heap structure
 #[inline]
 pub fn find(size: usize) -> Option<*mut BlockRegion> {
-    unsafe { HEAP.find_block(size) }
+    unsafe { HEAP.find(size) }
 }
 
 /// Prints some debugging information about the heap structure
@@ -137,9 +136,8 @@ fn scan_merge() {
             ptr = (*block).next;
         }
     }
-}*/
+}
 
-/*
 /// Takes pointers to two continuous blocks and merges them.
 /// Returns a pointer to the merged block.
 fn merge(block1: *mut BlockMeta, block2: *mut BlockMeta) {
