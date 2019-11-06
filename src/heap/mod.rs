@@ -4,11 +4,15 @@ use core::{fmt, mem};
 use libc_print::libc_eprintln;
 
 use crate::heap::list::IntrusiveList;
+use crate::util::align_next_mul_16;
 
 mod list;
 
-static HEAP: spin::Mutex<IntrusiveList> = spin::Mutex::new(IntrusiveList::new());
+static mut HEAP: IntrusiveList = IntrusiveList::new();
+
 pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
+const SPLIT_MIN_BLOCK_SIZE: usize = align_next_mul_16(BLOCK_REGION_META_SIZE * 2);
+const BLOCK_PADDING: usize = 0;
 
 #[repr(C)]
 pub struct BlockRegion {
@@ -30,12 +34,18 @@ impl BlockRegion {
     }
 
     #[inline]
-    pub fn verify(&self) {
+    pub fn verify(&self, panic: bool) {
         if self.magic != 0xBADC0DED {
-            panic!(
-                "magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
+            if panic {
+                panic!(
+                    "[heap] magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
+                    self.magic
+                );
+            }
+            libc_eprintln!(
+                "[heap] magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
                 self.magic
-            )
+            );
         }
     }
 }
@@ -54,18 +64,16 @@ impl fmt::Display for BlockRegion {
 #[inline]
 pub unsafe fn insert(block: *mut BlockRegion) {
     log!("[insert]: {} at {:?}", *block, block);
-    let mut heap = HEAP.lock();
-    heap.insert(block);
-    //if cfg!(debug_assertions) {
-    heap.debug();
-    //}
+    HEAP.insert(block);
+    if cfg!(debug_assertions) {
+        HEAP.debug();
+    }
 }
 
 /// Removes and returns a suitable empty block from the heap structure.
 #[inline]
 pub unsafe fn pop(size: usize) -> Option<*mut BlockRegion> {
-    let mut heap = HEAP.lock();
-    let block = heap.pop(size)?;
+    let block = HEAP.pop(size)?;
     log!("[pop]: {} at {:?}", *block, block);
     return Some(block);
 }
@@ -73,15 +81,13 @@ pub unsafe fn pop(size: usize) -> Option<*mut BlockRegion> {
 /// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
 #[inline]
 pub unsafe fn get_block_meta(ptr: *mut c_void) -> *mut BlockRegion {
-    let block = ptr.cast::<BlockRegion>().offset(-1);
-    (*block).verify();
-    return block;
+    ptr.cast::<BlockRegion>().offset(-1)
 }
 
 /// Returns a pointer to the assigned memory region for the given block
 #[inline]
 pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
-    (*block).verify();
+    (*block).verify(true);
     return block.offset(1).cast::<c_void>();
 }
 
@@ -90,28 +96,21 @@ pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
 pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
     unsafe { log!("[split]: {} at {:?}", *block, block) }
 
-    // Align pointer of new block
-    let new_blk_offset = (BLOCK_REGION_META_SIZE + size + 1).next_power_of_two();
+    let new_blk_offset = align_next_mul_16(BLOCK_REGION_META_SIZE + size + BLOCK_PADDING);
     // Check if its possible to split the block with the requested size
     let new_blk_size = unsafe { (*block).size }
+        .checked_sub(BLOCK_PADDING)?
         .checked_sub(new_blk_offset)?
         .checked_sub(BLOCK_REGION_META_SIZE)?;
-    if new_blk_size == 0 {
+
+    if new_blk_size < SPLIT_MIN_BLOCK_SIZE {
         log!("      -> None");
         return None;
     }
 
     unsafe {
-        assert!(
-            new_blk_offset + BLOCK_REGION_META_SIZE < (*block).size,
-            "(left={}, right={})",
-            new_blk_offset + BLOCK_REGION_META_SIZE,
-            (*block).size
-        );
-
         // Update size for old block
         (*block).size = size;
-
         // Create block with remaining size
         let new_block = block
             .cast::<c_void>()
@@ -121,7 +120,14 @@ pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
 
         log!("      -> {} at {:?}", *block, block);
         log!("      -> {} at {:?}", *new_block, new_block);
-
+        log!(
+            "         distance is {} bytes",
+            new_block as usize - (block as usize + BLOCK_REGION_META_SIZE + (*block).size)
+        );
+        assert_eq!(
+            new_block as usize - (block as usize + BLOCK_REGION_META_SIZE + (*block).size),
+            BLOCK_PADDING
+        );
         return Some(new_block);
     };
 }

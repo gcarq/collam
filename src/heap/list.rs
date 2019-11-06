@@ -52,25 +52,14 @@ impl IntrusiveList {
         }
     }
 
-    /// Removes the given element from the list.
-    unsafe fn remove(&mut self, elem: *mut BlockRegion) {
-        // Update link in previous element
-        if let Some(prev) = (*elem).prev {
-            (*prev).next = (*elem).next;
-        }
-
-        // Update link in next element
-        if let Some(next) = (*elem).next {
-            (*next).prev = (*elem).prev;
-        }
-
+    /// Removes the given element from the list and returns it.
+    unsafe fn remove(&mut self, elem: *mut BlockRegion) -> *mut BlockRegion {
         // Update head
         if let Some(head) = self.head {
             if elem == head {
                 self.head = (*elem).next;
             }
         }
-
         // Update tail
         if let Some(tail) = self.tail {
             if elem == tail {
@@ -78,9 +67,19 @@ impl IntrusiveList {
             }
         }
 
+        // Update link in previous element
+        if let Some(prev) = (*elem).prev {
+            (*prev).next = (*elem).next;
+        }
+        // Update link in next element
+        if let Some(next) = (*elem).next {
+            (*next).prev = (*elem).prev;
+        }
+
         // Clear links in current element
         (*elem).next = None;
         (*elem).prev = None;
+        return elem;
     }
 
     /// Prints some debugging information about the heap structure
@@ -88,7 +87,7 @@ impl IntrusiveList {
         for (i, item) in self.into_iter().enumerate() {
             unsafe {
                 log!("[debug]: pos: {}\t{} at\t{:?}", i, *item, item);
-                (*item).verify();
+                (*item).verify(true);
 
                 match (*item).prev {
                     Some(prev) => assert_eq!((*prev).next.unwrap(), item),
@@ -100,9 +99,8 @@ impl IntrusiveList {
                     None => assert_eq!(self.tail.unwrap(), item),
                 }
 
-                //TODO:
-                /*if let Some(next) = (*elem).next {
-                    assert!(elem < next);
+                /*if let Some(next) = (*item).next {
+                    assert!(item < next, "{:?} is not smaller than {:?}", item, next);
                 }*/
             }
         }
@@ -112,15 +110,14 @@ impl IntrusiveList {
     pub fn pop(&mut self, size: usize) -> Option<*mut BlockRegion> {
         for block in self.into_iter() {
             unsafe {
-                if size <= (*block).size {
+                if size < (*block).size {
                     log!(
                         "[libdmalloc.so]: found suitable {} at {:?} for size {}",
                         *block,
                         block,
                         size
                     );
-                    self.remove(block);
-                    return Some(block);
+                    return Some(self.remove(block));
                 }
             }
         }

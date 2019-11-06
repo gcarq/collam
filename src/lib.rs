@@ -10,9 +10,6 @@ use core::{cmp, intrinsics, panic, ptr};
 
 use libc_print::libc_eprintln;
 
-use crate::heap::get_block_meta;
-use crate::meta::alloc;
-
 mod macros;
 mod heap;
 mod meta;
@@ -22,7 +19,8 @@ static MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 
 #[no_mangle]
 pub extern "C" fn malloc(size: usize) -> *mut c_void {
-    return alloc(size);
+    let _lock = MUTEX.lock();
+    return meta::alloc(size);
 }
 
 #[no_mangle]
@@ -31,11 +29,11 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
         Some(x) => x,
         None => panic!("integer overflow detected (nobj={}, size={})", nobj, size),
     };
-    let ptr = alloc(total_size);
-    let _lock = MUTEX.lock(); // lock gets dropped implicitly
 
+    let _lock = MUTEX.lock();
+    let ptr = meta::alloc(total_size);
     // Initialize memory region with 0
-    unsafe { ptr.write_bytes(0, total_size) }
+    unsafe { intrinsics::volatile_set_memory(ptr, 0, total_size) }
     return ptr;
 }
 
@@ -43,7 +41,8 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size
-        return alloc(size);
+        let _lock = MUTEX.lock();
+        return meta::alloc(size);
     } else if size == 0 {
         // if size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr)
@@ -51,22 +50,13 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         return ptr::null_mut();
     }
 
-    let new_ptr = alloc(size);
     let _lock = MUTEX.lock();
+    let new_ptr = meta::alloc(size);
     unsafe {
-        let old_block = get_block_meta(p);
-        let new_blk = get_block_meta(new_ptr);
-        let cpy_size = cmp::min(size, (*old_block).size);
-        libc_eprintln!(
-            "[realloc] size={}, Copying {} bytes from {:?} to {:?}...",
-            size,
-            cpy_size,
-            old_block,
-            new_blk
-        );
-        libc_eprintln!("    from -> {} at {:?}", *old_block, old_block);
-        libc_eprintln!("      to -> {} at {:?}", *new_blk, new_blk);
-        ptr::copy(p, new_ptr, cpy_size);
+        let old_block = heap::get_block_meta(p);
+        (*old_block).verify(true);
+        let copy_size = cmp::min(size, (*old_block).size);
+        intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, p, copy_size);
 
         // Add old block back to heap structure
         heap::insert(old_block)
@@ -75,15 +65,18 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
 }
 
 #[no_mangle]
-pub extern "C" fn free(pointer: *mut c_void) {
-    if pointer.is_null() {
+pub extern "C" fn free(ptr: *mut c_void) {
+    if ptr.is_null() {
         return;
     }
 
-    let _lock = MUTEX.lock(); // lock gets dropped implicitly
-
-    // Add freed block back to heap structure
-    return unsafe { heap::insert(get_block_meta(pointer)) };
+    let _lock = MUTEX.lock();
+    unsafe {
+        let block = heap::get_block_meta(ptr);
+        (*block).verify(false);
+        // Add freed block back to heap structure
+        return heap::insert(block);
+    }
 }
 
 #[panic_handler]

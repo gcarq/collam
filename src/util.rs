@@ -1,28 +1,29 @@
 use core::ffi::c_void;
-use core::mem;
 
 /// Returns a fixed number of bytes that is larger than min_size and
 /// a multiple of _SC_PAGESIZE
 #[inline]
-pub fn alloc_unit(min_size: usize) -> isize {
-    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+pub fn alloc_unit(min_size: usize) -> usize {
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
 
-    for i in 1.. {
-        let size = i * page_size as isize;
-        if size >= min_size as isize {
+    let mut size: usize = 4 * page_size;
+    loop {
+        if size >= min_size {
             return size;
         }
+        size *= 2;
     }
-    panic!("Unable to request {} bytes", min_size);
 }
 
 /// Returns a pointer to the current program break
 #[inline]
+#[allow(dead_code)]
 pub unsafe fn get_program_break() -> *mut c_void {
     libc::sbrk(0)
 }
 
-#[inline]
-pub fn is_aligned(ptr: *mut c_void) -> bool {
-    ptr.align_offset(mem::size_of::<usize>()) == 0
+/// Align passed value to multiple of 16
+/// TODO: can overflow if size is slightly less than usize::MAX
+pub const fn align_next_mul_16(val: usize) -> usize {
+    (val + 15) & !15usize
 }
