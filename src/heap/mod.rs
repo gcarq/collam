@@ -52,29 +52,24 @@ impl fmt::Display for BlockRegion {
 
 /// Inserts a block to the heap structure
 #[inline]
-pub fn insert(block: *mut BlockRegion) {
-    unsafe {
-        log!("[insert]: {} at {:?}", *block, block);
-        HEAP.insert(block);
-    }
+pub unsafe fn insert(block: *mut BlockRegion) {
+    log!("[insert]: {} at {:?}", *block, block);
+    HEAP.insert(block);
 }
 
 /// Removes and returns a suitable empty block from the heap structure.
 #[inline]
-pub fn pop(size: usize) -> Option<*mut BlockRegion> {
-    unsafe {
-        let block = HEAP.find(size)?;
-        HEAP.remove(block);
-        log!("[pop]: {} at {:?}", *block, block);
-        return Some(block);
-    }
+pub unsafe fn pop(size: usize) -> Option<*mut BlockRegion> {
+    let block = HEAP.pop(size)?;
+    log!("[pop]: {} at {:?}", *block, block);
+    return Some(block);
 }
 
 /// Prints some debugging information about the heap structure
 #[inline]
-pub fn debug() {
+pub unsafe fn debug() {
     //if cfg!(debug_assertions) {
-    unsafe { HEAP.debug() }
+    HEAP.debug()
     //}
 }
 

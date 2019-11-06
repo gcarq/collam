@@ -31,10 +31,12 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
         Some(x) => x,
         None => panic!("integer overflow detected (nobj={}, size={})", nobj, size),
     };
-    let pointer = alloc(total_size);
+    let ptr = alloc(total_size);
     let _lock = MUTEX.lock(); // lock gets dropped implicitly
-    unsafe { pointer.write_bytes(0, total_size) }
-    pointer
+
+    // Initialize memory region with 0
+    unsafe { ptr.write_bytes(0, total_size) }
+    return ptr;
 }
 
 #[no_mangle]
@@ -50,13 +52,14 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     }
 
     let new_ptr = alloc(size);
-    let lock = MUTEX.lock();
+    let _lock = MUTEX.lock();
     unsafe {
         let old_block = get_block_meta(p);
         let new_blk = get_block_meta(new_ptr);
         let cpy_size = cmp::min(size, (*old_block).size);
         libc_eprintln!(
-            "[realloc] Copying {} bytes from {:?} to {:?}...",
+            "[realloc] size={}, Copying {} bytes from {:?} to {:?}...",
+            size,
             cpy_size,
             old_block,
             new_blk
@@ -64,11 +67,11 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         libc_eprintln!("    from -> {} at {:?}", *old_block, old_block);
         libc_eprintln!("      to -> {} at {:?}", *new_blk, new_blk);
         ptr::copy(p, new_ptr, cpy_size);
-    }
-    drop(lock);
 
-    free(p);
-    new_ptr
+        // Add old block back to heap structure
+        heap::insert(old_block)
+    }
+    return new_ptr;
 }
 
 #[no_mangle]
@@ -78,15 +81,15 @@ pub extern "C" fn free(pointer: *mut c_void) {
     }
 
     let _lock = MUTEX.lock(); // lock gets dropped implicitly
-    let block = unsafe { get_block_meta(pointer) };
-    // Re-add block to list
-    heap::insert(block);
+
+    // Add freed block back to heap structure
+    return unsafe { heap::insert(get_block_meta(pointer)) };
 }
 
 #[panic_handler]
 fn panic(info: &panic::PanicInfo) -> ! {
     libc_eprintln!("panic occurred: {:?}", info);
-    unsafe { intrinsics::abort() }
+    unsafe { intrinsics::abort() };
 }
 
 //#[lang = "panic_fmt"] extern fn panic_fmt() -> ! { unsafe { intrinsics::abort() } }

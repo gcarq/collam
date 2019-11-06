@@ -33,56 +33,52 @@ impl IntrusiveList {
         assert_ne!(self.tail, None);
 
         // TODO: remove unwrap at some point
-        self.insert_after(self.tail.unwrap(), elem);
+        unsafe { self.insert_after(self.tail.unwrap(), elem) };
     }
 
-    fn insert_after(&mut self, after: *mut BlockRegion, to_insert: *mut BlockRegion) {
-        unsafe {
-            // Update links in new element
-            (*to_insert).next = (*after).next;
-            (*to_insert).prev = Some(after);
+    unsafe fn insert_after(&mut self, after: *mut BlockRegion, to_insert: *mut BlockRegion) {
+        // Update links in new element
+        (*to_insert).next = (*after).next;
+        (*to_insert).prev = Some(after);
 
-            // Update link in existing element
-            (*after).next = Some(to_insert);
+        // Update link in existing element
+        (*after).next = Some(to_insert);
 
-            // Update tail if necessary
-            if (*to_insert).next.is_none() {
-                self.tail = Some(to_insert);
-            }
+        // Update tail if necessary
+        if (*to_insert).next.is_none() {
+            self.tail = Some(to_insert);
         }
     }
 
     /// Removes the given element from the list.
-    pub fn remove(&mut self, elem: *mut BlockRegion) {
-        unsafe {
-            // Update link in previous element
-            if let Some(prev) = (*elem).prev {
-                (*prev).next = (*elem).next;
-            }
-
-            // Update link in next element
-            if let Some(next) = (*elem).next {
-                (*next).prev = (*elem).prev;
-            }
-
-            // Update head
-            if let Some(head) = self.head {
-                if elem == head {
-                    self.head = (*elem).next;
-                }
-            }
-
-            // Update tail
-            if let Some(tail) = self.tail {
-                if elem == tail {
-                    self.tail = (*elem).prev;
-                }
-            }
-
-            // Clear links in current element
-            (*elem).next = None;
-            (*elem).prev = None;
+    unsafe fn remove(&mut self, elem: *mut BlockRegion) {
+        // Update link in previous element
+        if let Some(prev) = (*elem).prev {
+            (*prev).next = (*elem).next;
         }
+
+        // Update link in next element
+        if let Some(next) = (*elem).next {
+            (*next).prev = (*elem).prev;
+        }
+
+        // Update head
+        if let Some(head) = self.head {
+            if elem == head {
+                self.head = (*elem).next;
+            }
+        }
+
+        // Update tail
+        if let Some(tail) = self.tail {
+            if elem == tail {
+                self.tail = (*elem).prev;
+            }
+        }
+
+        // Clear links in current element
+        (*elem).next = None;
+        (*elem).prev = None;
     }
 
     pub fn debug(&self) {
@@ -98,8 +94,8 @@ impl IntrusiveList {
         }
     }
 
-    /// Returns the first suitable block found
-    pub fn find(&self, size: usize) -> Option<*mut BlockRegion> {
+    /// Removes and returns the first suitable block
+    pub fn pop(&mut self, size: usize) -> Option<*mut BlockRegion> {
         for block in self.into_iter() {
             unsafe {
                 if size <= (*block).size {
@@ -109,6 +105,7 @@ impl IntrusiveList {
                         block,
                         size
                     );
+                    self.remove(block);
                     return Some(block);
                 }
             }
