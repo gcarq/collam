@@ -34,7 +34,7 @@ impl BlockRegion {
     }
 
     #[inline]
-    pub fn verify(&self, panic: bool) {
+    pub fn verify(&self, panic: bool) -> bool {
         if self.magic != 0xBADC0DED {
             if panic {
                 panic!(
@@ -42,11 +42,13 @@ impl BlockRegion {
                     self.magic
                 );
             }
-            libc_eprintln!(
-                "[heap] magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
+            error!(
+                "[heap] WARN: magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
                 self.magic
             );
+            return false;
         }
+        return true;
     }
 }
 
@@ -63,18 +65,18 @@ impl fmt::Display for BlockRegion {
 /// Inserts a block to the heap structure
 #[inline]
 pub unsafe fn insert(block: *mut BlockRegion) {
-    log!("[insert]: {} at {:?}", *block, block);
+    debug!("[insert]: {} at {:?}", *block, block);
     HEAP.insert(block);
-    if cfg!(debug_assertions) {
-        HEAP.debug();
-    }
+    //if cfg!(debug_assertions) {
+    HEAP.debug();
+    //}
 }
 
 /// Removes and returns a suitable empty block from the heap structure.
 #[inline]
 pub unsafe fn pop(size: usize) -> Option<*mut BlockRegion> {
     let block = HEAP.pop(size)?;
-    log!("[pop]: {} at {:?}", *block, block);
+    debug!("[pop]: {} at {:?}", *block, block);
     return Some(block);
 }
 
@@ -94,7 +96,7 @@ pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
 /// Returns a newly created block with the remaining size or None if split is not possible.
 pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
-    unsafe { log!("[split]: {} at {:?}", *block, block) }
+    unsafe { debug!("[split]: {} at {:?}", *block, block) }
 
     let new_blk_offset = align_next_mul_16(BLOCK_REGION_META_SIZE + size + BLOCK_PADDING);
     // Check if its possible to split the block with the requested size
@@ -104,7 +106,7 @@ pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
         .checked_sub(BLOCK_REGION_META_SIZE)?;
 
     if new_blk_size < SPLIT_MIN_BLOCK_SIZE {
-        log!("      -> None");
+        debug!("      -> None");
         return None;
     }
 
@@ -118,9 +120,9 @@ pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
             .cast::<BlockRegion>();
         *new_block = BlockRegion::new(new_blk_size);
 
-        log!("      -> {} at {:?}", *block, block);
-        log!("      -> {} at {:?}", *new_block, new_block);
-        log!(
+        debug!("      -> {} at {:?}", *block, block);
+        debug!("      -> {} at {:?}", *new_block, new_block);
+        debug!(
             "         distance is {} bytes",
             new_block as usize - (block as usize + BLOCK_REGION_META_SIZE + (*block).size)
         );

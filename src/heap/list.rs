@@ -17,17 +17,18 @@ impl IntrusiveList {
         }
     }
 
-    pub fn insert(&mut self, elem: *mut BlockRegion) {
+    /// Add a block to the list
+    pub fn insert(&mut self, block: *mut BlockRegion) {
         unsafe {
-            assert_eq!((*elem).prev, None);
-            assert_eq!((*elem).next, None);
+            assert_eq!((*block).prev, None, "block: {} at {:?}", *block, block);
+            assert_eq!((*block).next, None, "block: {} at {:?}", *block, block);
         }
 
         // Add initial element
         if self.head.is_none() {
             assert_eq!(self.tail, None);
-            self.head = Some(elem);
-            self.tail = Some(elem);
+            self.head = Some(block);
+            self.tail = Some(block);
             return;
         }
 
@@ -35,9 +36,10 @@ impl IntrusiveList {
         assert_ne!(self.tail, None);
 
         // TODO: remove unwrap at some point
-        unsafe { self.insert_after(self.tail.unwrap(), elem) };
+        unsafe { self.insert_after(self.tail.unwrap(), block) };
     }
 
+    /// Add a block to the list after the given block
     unsafe fn insert_after(&mut self, after: *mut BlockRegion, to_insert: *mut BlockRegion) {
         // Update links in new element
         (*to_insert).next = (*after).next;
@@ -84,69 +86,55 @@ impl IntrusiveList {
 
     /// Prints some debugging information about the heap structure
     pub fn debug(&self) {
-        for (i, item) in self.into_iter().enumerate() {
+        let mut i = 0;
+        let mut ptr = self.head;
+        while let Some(block) = ptr {
             unsafe {
-                log!("[debug]: pos: {}\t{} at\t{:?}", i, *item, item);
-                (*item).verify(true);
+                debug!("[debug]: pos: {}\t{} at\t{:?}", i, *block, block);
+                (*block).verify(true);
 
-                match (*item).prev {
-                    Some(prev) => assert_eq!((*prev).next.unwrap(), item),
-                    None => assert_eq!(self.head.unwrap(), item),
+                match (*block).prev {
+                    Some(prev) => {
+                        assert_eq!((*prev).next.unwrap(), block);
+                        // rule out self reference
+                        assert_ne!(prev, block);
+                    }
+                    None => assert_eq!(self.head.unwrap(), block),
                 }
 
-                match (*item).next {
-                    Some(next) => assert_eq!((*next).prev.unwrap(), item),
-                    None => assert_eq!(self.tail.unwrap(), item),
+                match (*block).next {
+                    Some(next) => {
+                        assert_eq!((*next).prev.unwrap(), block);
+                        // rule out self reference
+                        assert_ne!(next, block);
+                    }
+                    None => assert_eq!(self.tail.unwrap(), block),
                 }
 
                 /*if let Some(next) = (*item).next {
                     assert!(item < next, "{:?} is not smaller than {:?}", item, next);
                 }*/
+                ptr = (*block).next;
+                i += 1;
             }
         }
     }
 
     /// Removes and returns the first suitable block
     pub fn pop(&mut self, size: usize) -> Option<*mut BlockRegion> {
-        for block in self.into_iter() {
+        let mut ptr = self.head;
+        while let Some(block) = ptr {
             unsafe {
-                if size < (*block).size {
-                    log!(
+                if size <= (*block).size {
+                    debug!(
                         "[libdmalloc.so]: found suitable {} at {:?} for size {}",
-                        *block,
-                        block,
-                        size
+                        *block, block, size
                     );
                     return Some(self.remove(block));
                 }
+                ptr = (*block).next;
             }
         }
         None
-    }
-}
-
-impl IntoIterator for IntrusiveList {
-    type Item = *mut BlockRegion;
-    type IntoIter = ListIntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        ListIntoIter { node: self.head }
-    }
-}
-
-/// Iterator for simply traversing the LinkedList
-pub struct ListIntoIter {
-    node: Option<*mut BlockRegion>,
-}
-
-impl Iterator for ListIntoIter {
-    type Item = *mut BlockRegion;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let cur = self.node;
-        if let Some(node) = cur {
-            self.node = unsafe { (*node).next };
-        }
-        return cur;
     }
 }

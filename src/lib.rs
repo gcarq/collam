@@ -73,15 +73,19 @@ pub extern "C" fn free(ptr: *mut c_void) {
     let _lock = MUTEX.lock();
     unsafe {
         let block = heap::get_block_meta(ptr);
-        (*block).verify(false);
+        if !(*block).verify(false) {
+            error!("     -> {} at {:?}", *block, block);
+            return;
+        }
         // Add freed block back to heap structure
+        assert!((*block).size > 0);
         return heap::insert(block);
     }
 }
 
 #[panic_handler]
 fn panic(info: &panic::PanicInfo) -> ! {
-    libc_eprintln!("panic occurred: {:?}", info);
+    error!("panic occurred: {:?}", info);
     unsafe { intrinsics::abort() };
 }
 
