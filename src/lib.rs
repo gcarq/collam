@@ -19,8 +19,10 @@ static MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 
 #[no_mangle]
 pub extern "C" fn malloc(size: usize) -> *mut c_void {
-    let _lock = MUTEX.lock();
-    return meta::alloc(size);
+    let lock = MUTEX.lock();
+    let ptr = meta::alloc(size);
+    drop(lock);
+    return ptr;
 }
 
 #[no_mangle]
@@ -30,10 +32,11 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
         None => panic!("integer overflow detected (nobj={}, size={})", nobj, size),
     };
 
-    let _lock = MUTEX.lock();
+    let lock = MUTEX.lock();
     let ptr = meta::alloc(total_size);
     // Initialize memory region with 0
     unsafe { intrinsics::volatile_set_memory(ptr, 0, total_size) }
+    drop(lock);
     return ptr;
 }
 
@@ -41,8 +44,10 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size
-        let _lock = MUTEX.lock();
-        return meta::alloc(size);
+        let lock = MUTEX.lock();
+        let ptr = meta::alloc(size);
+        drop(lock);
+        return ptr;
     } else if size == 0 {
         // if size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr)
@@ -50,7 +55,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         return ptr::null_mut();
     }
 
-    let _lock = MUTEX.lock();
+    let lock = MUTEX.lock();
     let new_ptr = meta::alloc(size);
     unsafe {
         let old_block = heap::get_block_meta(p);
@@ -61,6 +66,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         // Add old block back to heap structure
         heap::insert(old_block)
     }
+    drop(lock);
     return new_ptr;
 }
 
@@ -70,7 +76,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
         return;
     }
 
-    let _lock = MUTEX.lock();
+    let lock = MUTEX.lock();
     unsafe {
         let block = heap::get_block_meta(ptr);
         if !(*block).verify(false) {
@@ -79,8 +85,9 @@ pub extern "C" fn free(ptr: *mut c_void) {
         }
         // Add freed block back to heap structure
         assert!((*block).size > 0);
-        return heap::insert(block);
+        heap::insert(block);
     }
+    drop(lock);
 }
 
 #[panic_handler]
