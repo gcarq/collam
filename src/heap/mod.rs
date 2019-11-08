@@ -34,7 +34,7 @@ impl BlockRegion {
     }
 
     #[inline]
-    pub fn verify(&self, panic: bool) -> bool {
+    pub fn verify(&self, panic: bool, warn: bool) -> bool {
         if self.magic != 0xBADC0DED {
             if panic {
                 panic!(
@@ -42,10 +42,12 @@ impl BlockRegion {
                     self.magic
                 );
             }
-            eprintln!(
-                "[heap] WARN: magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
-                self.magic
-            );
+            if warn {
+                eprintln!(
+                    "[heap] WARN: magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
+                    self.magic
+                );
+            }
             return false;
         }
         return true;
@@ -89,8 +91,16 @@ pub unsafe fn get_block_meta(ptr: *mut c_void) -> *mut BlockRegion {
 /// Returns a pointer to the assigned memory region for the given block
 #[inline]
 pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
-    (*block).verify(true);
+    (*block).verify(true, true);
     return block.offset(1).cast::<c_void>();
+}
+
+/// Returns a pointer where the next BlockRegion would start.
+unsafe fn get_next_block(block: *mut BlockRegion) -> *mut BlockRegion {
+    let offset = align_next_mul_16(BLOCK_REGION_META_SIZE + (*block).size + BLOCK_PADDING) as isize;
+    let rel_block = block.cast::<c_void>().offset(offset).cast::<BlockRegion>();
+    (*rel_block).verify(false, false);
+    return rel_block;
 }
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).

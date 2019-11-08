@@ -60,7 +60,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     let new_ptr = meta::alloc(size);
     unsafe {
         let old_block = heap::get_block_meta(p);
-        (*old_block).verify(true);
+        (*old_block).verify(true, true);
         let copy_size = cmp::min(size, (*old_block).size);
         intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, p, copy_size);
 
@@ -80,7 +80,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
     let lock = MUTEX.lock();
     unsafe {
         let block = heap::get_block_meta(ptr);
-        if !(*block).verify(false) {
+        if !(*block).verify(false, true) {
             eprintln!("     -> {} at {:?}", *block, block);
             return;
         }
