@@ -18,40 +18,89 @@ impl IntrusiveList {
     }
 
     /// Add a block to the list
-    pub fn insert(&mut self, block: *mut BlockRegion) {
+    pub fn insert(&mut self, to_insert: *mut BlockRegion) {
         unsafe {
-            debug_assert_eq!((*block).prev, None, "block: {} at {:?}", *block, block);
-            debug_assert_eq!((*block).next, None, "block: {} at {:?}", *block, block);
+            debug_assert_eq!((*to_insert).prev, None, "block: {} at {:?}", *to_insert, to_insert);
+            debug_assert_eq!((*to_insert).next, None, "block: {} at {:?}", *to_insert, to_insert);
         }
 
         // Add initial element
         if self.head.is_none() {
             debug_assert_eq!(self.tail, None);
-            self.head = Some(block);
-            self.tail = Some(block);
+            self.head = Some(to_insert);
+            self.tail = Some(to_insert);
             return;
         }
 
         debug_assert_ne!(self.head, None);
         debug_assert_ne!(self.tail, None);
 
-        // TODO: remove unwrap at some point
-        unsafe { self.insert_after(self.tail.unwrap(), block) };
+        unsafe {
+            match self.find_higher_block(to_insert) {
+                Some(block) => self.insert_before(block, to_insert),
+                None => self.insert_after(self.tail.unwrap(), to_insert),
+            }
+        }
     }
 
-    /// Add a block to the list after the given block
+    /// Add block to the list before the given element
+    unsafe fn insert_before(&mut self, before: *mut BlockRegion, to_insert: *mut BlockRegion) {
+        dprintln!("insert_before");
+        // Update links in new block
+        (*to_insert).prev = (*before).prev;
+        (*to_insert).next = Some(before);
+
+        // Update link for element after new block
+        (*before).prev = Some(to_insert);
+
+        // Update link for element before new block
+        if let Some(prev) = (*to_insert).prev {
+            (*prev).next = Some(to_insert);
+        }
+        self.update_ends(to_insert);
+    }
+
+    /// Add block to the list after the given element
     unsafe fn insert_after(&mut self, after: *mut BlockRegion, to_insert: *mut BlockRegion) {
-        // Update links in new element
+        dprintln!("insert_after");
+        // Update links in new block
         (*to_insert).next = (*after).next;
         (*to_insert).prev = Some(after);
 
-        // Update link in existing element
+        // Update link for element before new block
         (*after).next = Some(to_insert);
 
-        // Update tail if necessary
-        if (*to_insert).next.is_none() {
-            self.tail = Some(to_insert);
+        // Update link for element after new block
+        if let Some(next) = (*to_insert).next {
+            (*next).prev = Some(to_insert);
         }
+        self.update_ends(to_insert);
+    }
+
+    /// Checks if head or tail should be updated with current block
+    #[inline]
+    unsafe fn update_ends(&mut self, block: *mut BlockRegion) {
+        // Update head if necessary
+        if (*block).prev.is_none() {
+            self.head = Some(block);
+        }
+
+        // Update tail if necessary
+        if (*block).next.is_none() {
+            self.tail = Some(block);
+        }
+    }
+
+    /// Returns first block that has a higher memory address than the given block.
+    fn find_higher_block(&self, to_insert: *mut BlockRegion) -> Option<*mut BlockRegion> {
+        let mut ptr = self.head;
+        while let Some(block) = ptr {
+            if block > to_insert {
+                return Some(block);
+            }
+            ptr = unsafe { (*block).next };
+        }
+        return None;
     }
 
     /// Removes the given element from the list and returns it.
@@ -111,9 +160,9 @@ impl IntrusiveList {
                     None => debug_assert_eq!(self.tail.unwrap(), block),
                 }
 
-                /*if let Some(next) = (*item).next {
-                    debug_assert!(item < next, "{:?} is not smaller than {:?}", item, next);
-                }*/
+                if let Some(next) = (*block).next {
+                    debug_assert!(block < next, "{:?} is not smaller than {:?}", block, next);
+                }
                 ptr = (*block).next;
                 i += 1;
             }
