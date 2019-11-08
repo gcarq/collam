@@ -11,7 +11,7 @@ pub fn alloc(size: usize) -> *mut c_void {
         return ptr::null_mut();
     }
     let size = util::align_next_mul_16(size);
-    debug!("[libdmalloc.so]: alloc(size={})", size);
+    dprintln!("[libdmalloc.so]: alloc(size={})", size);
     // Check if there is already a suitable block allocated
     let block = if let Some(block) = unsafe { heap::pop(size) } {
         block
@@ -27,8 +27,8 @@ pub fn alloc(size: usize) -> *mut c_void {
     }
 
     unsafe {
-        debug!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
-        assert!((*block).size >= size, "requested={}, got={}", size, *block);
+        dprintln!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
+        debug_assert!((*block).size >= size, "requested={}, got={}", size, *block);
         return heap::get_mem_region(block);
     }
 }

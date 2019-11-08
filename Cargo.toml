@@ -8,6 +8,9 @@ edition = "2018"
 name = "dmalloc"
 crate-type = ["dylib"]
 
+[features]
+debug = []
+
 [dependencies]
 libc = "0.2"
 libc-print = "0.1.11"
@@ -18,8 +21,8 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
-opt-level = 1
-debug = true
+opt-level = 3
+debug = false
 lto = true
 debug-assertions = false
 codegen-units = 16

@@ -1,6 +1,7 @@
 #![feature(stmt_expr_attributes, lang_items, core_intrinsics, core_panic_info)]
 #![no_std]
 
+#[cfg_attr(linux, debug)]
 extern crate libc;
 extern crate libc_print;
 extern crate spin;
@@ -80,11 +81,11 @@ pub extern "C" fn free(ptr: *mut c_void) {
     unsafe {
         let block = heap::get_block_meta(ptr);
         if !(*block).verify(false) {
-            error!("     -> {} at {:?}", *block, block);
+            eprintln!("     -> {} at {:?}", *block, block);
             return;
         }
         // Add freed block back to heap structure
-        assert!((*block).size > 0);
+        debug_assert!((*block).size > 0);
         heap::insert(block);
     }
     drop(lock);
@@ -92,7 +93,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
 
 #[panic_handler]
 fn panic(info: &panic::PanicInfo) -> ! {
-    error!("panic occurred: {:?}", info);
+    eprintln!("panic occurred: {:?}", info);
     unsafe { intrinsics::abort() };
 }
 

@@ -20,20 +20,20 @@ impl IntrusiveList {
     /// Add a block to the list
     pub fn insert(&mut self, block: *mut BlockRegion) {
         unsafe {
-            assert_eq!((*block).prev, None, "block: {} at {:?}", *block, block);
-            assert_eq!((*block).next, None, "block: {} at {:?}", *block, block);
+            debug_assert_eq!((*block).prev, None, "block: {} at {:?}", *block, block);
+            debug_assert_eq!((*block).next, None, "block: {} at {:?}", *block, block);
         }
 
         // Add initial element
         if self.head.is_none() {
-            assert_eq!(self.tail, None);
+            debug_assert_eq!(self.tail, None);
             self.head = Some(block);
             self.tail = Some(block);
             return;
         }
 
-        assert_ne!(self.head, None);
-        assert_ne!(self.tail, None);
+        debug_assert_ne!(self.head, None);
+        debug_assert_ne!(self.tail, None);
 
         // TODO: remove unwrap at some point
         unsafe { self.insert_after(self.tail.unwrap(), block) };
@@ -90,29 +90,29 @@ impl IntrusiveList {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             unsafe {
-                debug!("[debug]: pos: {}\t{} at\t{:?}", i, *block, block);
+                dprintln!("[debug]: pos: {}\t{} at\t{:?}", i, *block, block);
                 (*block).verify(true);
 
                 match (*block).prev {
                     Some(prev) => {
-                        assert_eq!((*prev).next.unwrap(), block);
+                        debug_assert_eq!((*prev).next.unwrap(), block);
                         // rule out self reference
-                        assert_ne!(prev, block);
+                        debug_assert_ne!(prev, block);
                     }
-                    None => assert_eq!(self.head.unwrap(), block),
+                    None => debug_assert_eq!(self.head.unwrap(), block),
                 }
 
                 match (*block).next {
                     Some(next) => {
-                        assert_eq!((*next).prev.unwrap(), block);
+                        debug_assert_eq!((*next).prev.unwrap(), block);
                         // rule out self reference
-                        assert_ne!(next, block);
+                        debug_assert_ne!(next, block);
                     }
-                    None => assert_eq!(self.tail.unwrap(), block),
+                    None => debug_assert_eq!(self.tail.unwrap(), block),
                 }
 
                 /*if let Some(next) = (*item).next {
-                    assert!(item < next, "{:?} is not smaller than {:?}", item, next);
+                    debug_assert!(item < next, "{:?} is not smaller than {:?}", item, next);
                 }*/
                 ptr = (*block).next;
                 i += 1;
@@ -126,9 +126,11 @@ impl IntrusiveList {
         while let Some(block) = ptr {
             unsafe {
                 if size <= (*block).size {
-                    debug!(
+                    dprintln!(
                         "[libdmalloc.so]: found suitable {} at {:?} for size {}",
-                        *block, block, size
+                        *block,
+                        block,
+                        size
                     );
                     return Some(self.remove(block));
                 }
