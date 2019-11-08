@@ -120,8 +120,8 @@ impl IntrusiveList {
             return None;
         }
 
-        eprintln!("[merge]: {} at {:?}", *block1, block1);
-        eprintln!("       & {} at {:?}", *block2, block2);
+        dprintln!("[merge]: {} at {:?}", *block1, block1);
+        dprintln!("       & {} at {:?}", *block2, block2);
         // Update related links
         debug_assert!(block1 < block2);
         debug_assert_eq!(get_next_block(block1), block2);
@@ -132,7 +132,7 @@ impl IntrusiveList {
         }
         // Update to final size
         (*block1).size += BLOCK_REGION_META_SIZE + (*block2).size;
-        eprintln!("      -> {} at {:?}", *block1, block1);
+        dprintln!("      -> {} at {:?}", *block1, block1);
         return Some(block1);
     }
 
