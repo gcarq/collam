@@ -1,4 +1,6 @@
 use crate::heap::{get_next_block, BlockRegion, BLOCK_REGION_META_SIZE};
+use core::ffi::c_void;
+use core::intrinsics;
 use libc_print::libc_eprintln;
 
 #[derive(Copy, Clone)]
@@ -49,7 +51,10 @@ impl IntrusiveList {
 
         unsafe {
             match self.find_higher_block(to_insert) {
-                Some(block) => self.insert_before(block, to_insert),
+                Some(block) => {
+                    self.insert_before(block, to_insert);
+                    self.scan_merge(to_insert);
+                }
                 None => self.insert_after(self.tail.unwrap(), to_insert),
             }
         }
@@ -68,11 +73,7 @@ impl IntrusiveList {
         if let Some(prev) = (*to_insert).prev {
             (*prev).next = Some(to_insert);
         }
-
-        match self.maybe_merge(to_insert, before) {
-            Some(block) => self.update_ends(block),
-            None => self.update_ends(to_insert),
-        }
+        self.update_ends(to_insert);
     }
 
     /// Add block to the list after the given element
@@ -88,9 +89,6 @@ impl IntrusiveList {
         if let Some(next) = (*to_insert).next {
             (*next).prev = Some(to_insert);
         }
-
-        /*let block = self.maybe_merge(after, to_insert);
-        self.update_ends(block);*/
         self.update_ends(to_insert);
     }
 
@@ -110,37 +108,48 @@ impl IntrusiveList {
 
     /// Takes pointers to two continuous blocks and merges them.
     /// Returns a merged pointer if merge was possible, None otherwise.
-    unsafe fn maybe_merge(
-        &self,
-        block1: *mut BlockRegion,
-        block2: *mut BlockRegion,
-    ) -> Option<*mut BlockRegion> {
-        debug_assert!(block1 < block2);
-        if get_next_block(block1) != block2 {
+    /// NOTE: This function does not modify head or tail.
+    unsafe fn maybe_merge_with_next(&self, block: *mut BlockRegion) -> Option<*mut BlockRegion> {
+        let next = (*block).next?;
+        if get_next_block(block) != next {
             return None;
         }
 
-        dprintln!("[merge]: {} at {:?}", *block1, block1);
-        dprintln!("       & {} at {:?}", *block2, block2);
+        dprintln!("[merge]: {} at {:?}", *block, block);
+        dprintln!("       & {} at {:?}", *next, next);
         // Update related links
-        debug_assert!(block1 < block2);
-        debug_assert_eq!(get_next_block(block1), block2);
-
-        (*block1).next = (*block2).next;
-        if let Some(next) = (*block1).next {
-            (*next).prev = Some(block1);
+        (*block).next = (*next).next;
+        if let Some(n) = (*block).next {
+            (*n).prev = Some(block);
         }
         // Update to final size
-        (*block1).size += BLOCK_REGION_META_SIZE + (*block2).size;
-        dprintln!("      -> {} at {:?}", *block1, block1);
-        return Some(block1);
+        (*block).size += BLOCK_REGION_META_SIZE + (*next).size;
+
+        // Overwrite BlockRegion meta data for old block to detect double free
+        intrinsics::volatile_set_memory(next.cast::<c_void>(), 0, BLOCK_REGION_META_SIZE);
+
+        dprintln!("      -> {} at {:?}", *block, block);
+        return Some(block);
+    }
+
+    /// Iterator from the given block forward and merges all blocks possible.
+    unsafe fn scan_merge(&mut self, block: *mut BlockRegion) {
+        let mut ptr = Some(block);
+        while let Some(b) = ptr {
+            ptr = self.maybe_merge_with_next(b);
+        }
+        self.update_ends(block);
     }
 
     /// Returns first block that has a higher memory address than the given block.
+    /// TODO: implement as binary search
     fn find_higher_block(&self, to_insert: *mut BlockRegion) -> Option<*mut BlockRegion> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
-            if block > to_insert {
+            if block == to_insert {
+                // TODO: handle case where a already freed element will get added to list
+                panic!("double free detected!");
+            } else if block > to_insert {
                 return Some(block);
             }
             ptr = unsafe { (*block).next };

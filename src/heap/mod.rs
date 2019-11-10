@@ -12,14 +12,13 @@ static mut HEAP: IntrusiveList = IntrusiveList::new();
 
 pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
 const SPLIT_MIN_BLOCK_SIZE: usize = align_next_mul_16(BLOCK_REGION_META_SIZE * 2);
-const BLOCK_PADDING: usize = 0;
+const BLOCK_MAGIC: u32 = 0xDEADC0DE;
 
-#[repr(C)]
 pub struct BlockRegion {
     pub size: usize,
-    pub magic: u32,
     next: Option<*mut BlockRegion>,
     prev: Option<*mut BlockRegion>,
+    pub magic: u32,
 }
 
 impl BlockRegion {
@@ -29,23 +28,23 @@ impl BlockRegion {
             size,
             next: None,
             prev: None,
-            magic: 0xBADC0DED,
+            magic: BLOCK_MAGIC,
         }
     }
 
     #[inline]
     pub fn verify(&self, panic: bool, warn: bool) -> bool {
-        if self.magic != 0xBADC0DED {
+        if self.magic != BLOCK_MAGIC {
             if panic {
                 panic!(
-                    "[heap] magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
-                    self.magic
+                    "[heap] magic value does not match (got=0x{:X}, expected={:X})",
+                    self.magic, BLOCK_MAGIC
                 );
             }
             if warn {
                 eprintln!(
-                    "[heap] WARN: magic value does not match (got=0x{:X}, expected=0xBADC0DED)",
-                    self.magic
+                    "[heap] WARN: magic value does not match (got=0x{:X}, expected={:X}B)",
+                    self.magic, BLOCK_MAGIC
                 );
             }
             return false;
@@ -97,7 +96,7 @@ pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
 
 /// Returns a pointer where the next BlockRegion would start.
 unsafe fn get_next_block(block: *mut BlockRegion) -> *mut BlockRegion {
-    let offset = align_next_mul_16(BLOCK_REGION_META_SIZE + (*block).size + BLOCK_PADDING) as isize;
+    let offset = align_next_mul_16(BLOCK_REGION_META_SIZE + (*block).size) as isize;
     let rel_block = block.cast::<c_void>().offset(offset).cast::<BlockRegion>();
     (*rel_block).verify(false, false);
     return rel_block;
@@ -108,10 +107,9 @@ unsafe fn get_next_block(block: *mut BlockRegion) -> *mut BlockRegion {
 pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
     unsafe { dprintln!("[split]: {} at {:?}", *block, block) }
 
-    let new_blk_offset = align_next_mul_16(BLOCK_REGION_META_SIZE + size + BLOCK_PADDING);
+    let new_blk_offset = align_next_mul_16(BLOCK_REGION_META_SIZE + size);
     // Check if its possible to split the block with the requested size
     let new_blk_size = unsafe { (*block).size }
-        .checked_sub(BLOCK_PADDING)?
         .checked_sub(new_blk_offset)?
         .checked_sub(BLOCK_REGION_META_SIZE)?;
 
@@ -138,7 +136,7 @@ pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
         );
         debug_assert_eq!(
             new_block as usize - (block as usize + BLOCK_REGION_META_SIZE + (*block).size),
-            BLOCK_PADDING
+            0
         );
         return Some(new_block);
     };
