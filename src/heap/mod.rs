@@ -3,6 +3,7 @@ use core::{ffi::c_void, fmt, mem};
 use libc_print::libc_eprintln;
 
 use crate::heap::list::IntrusiveList;
+use crate::meta;
 use crate::util;
 
 mod list;
@@ -65,6 +66,19 @@ impl fmt::Display for BlockRegion {
 /// Inserts a block to the heap structure
 #[inline]
 pub unsafe fn insert(block: *mut BlockRegion) {
+    let ptr = get_next_potential_block(block).cast::<c_void>();
+    if ptr == util::get_program_break() {
+        let dec = BLOCK_REGION_META_SIZE + (*block).size;
+        dprintln!(
+            "[insert]: freeing {} bytes from process (break={:?})",
+            dec,
+            ptr
+        );
+        // TODO: handle sbrk return value
+        meta::sbrk(-1 * dec as isize);
+        return;
+    }
+
     dprintln!("[insert]: {} at {:?}", *block, block);
     HEAP.insert(block);
     if cfg!(feature = "debug") {
@@ -94,8 +108,7 @@ pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
 }
 
 /// Returns a pointer where the next BlockRegion would start.
-#[inline]
-pub unsafe fn get_next_potential_block(block: *mut BlockRegion) -> *mut BlockRegion {
+unsafe fn get_next_potential_block(block: *mut BlockRegion) -> *mut BlockRegion {
     let offset = util::align_next_mul_16(BLOCK_REGION_META_SIZE + (*block).size) as isize;
     let rel_block = block.cast::<c_void>().offset(offset).cast::<BlockRegion>();
     (*rel_block).verify(false, false);

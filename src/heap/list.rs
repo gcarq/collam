@@ -3,7 +3,6 @@ use core::{ffi::c_void, intrinsics};
 use libc_print::libc_eprintln;
 
 use crate::heap::{self, BlockRegion, BLOCK_REGION_META_SIZE};
-use crate::meta;
 
 #[derive(Copy, Clone)]
 pub struct IntrusiveList {
@@ -89,12 +88,6 @@ impl IntrusiveList {
 
     /// Add block to the list after the given element
     unsafe fn insert_after(&mut self, after: *mut BlockRegion, to_insert: *mut BlockRegion) {
-        // Free BlockRegion completely if it would be new tail
-        if (*to_insert).next.is_none() {
-            meta::maybe_free_block_region(to_insert);
-            return;
-        }
-
         // Update links in new block
         (*to_insert).next = (*after).next;
         (*to_insert).prev = Some(after);

@@ -23,7 +23,6 @@ pub unsafe fn get_program_break() -> *mut c_void {
 
 /// Align passed value to multiple of 16
 /// TODO: can overflow if size is slightly less than usize::MAX
-#[inline]
 pub const fn align_next_mul_16(val: usize) -> usize {
     (val + 15) & !15usize
 }

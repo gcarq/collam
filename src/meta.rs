@@ -9,7 +9,6 @@ pub fn alloc(size: usize) -> *mut c_void {
     if size == 0 {
         return ptr::null_mut();
     }
-
     let size = util::align_next_mul_16(size);
     dprintln!("[libdmalloc.so]: alloc(size={})", size);
 
@@ -29,21 +28,6 @@ pub fn alloc(size: usize) -> *mut c_void {
         dprintln!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
         debug_assert!((*block).size >= size, "requested={}, got={}", size, *block);
         return heap::get_mem_region(block);
-    }
-}
-
-pub unsafe fn maybe_free_block_region(block: *mut BlockRegion) {
-    let ptr = heap::get_next_potential_block(block).cast::<c_void>();
-    if ptr == util::get_program_break() {
-        let dec = heap::BLOCK_REGION_META_SIZE + (*block).size;
-        dprintln!(
-            "[insert]: freeing {} bytes from process (break={:?})",
-            dec,
-            ptr
-        );
-        // TODO: handle sbrk return value
-        sbrk(-1 * dec as isize);
-        return;
     }
 }
 
