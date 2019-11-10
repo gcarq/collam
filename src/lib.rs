@@ -86,6 +86,15 @@ pub extern "C" fn free(ptr: *mut c_void) {
     }
 }
 
+// TODO: implement me
+#[no_mangle]
+pub extern "C" fn mallopt(param: i32, value: i32) -> i32 {
+    panic!(
+        "[mallopt] not implemented! (param={}, value={})",
+        param, value
+    );
+}
+
 #[panic_handler]
 fn panic(info: &panic::PanicInfo) -> ! {
     eprintln!("panic occurred: {:?}", info);
