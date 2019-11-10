@@ -20,10 +20,8 @@ static MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 
 #[no_mangle]
 pub extern "C" fn malloc(size: usize) -> *mut c_void {
-    let lock = MUTEX.lock();
-    let ptr = meta::alloc(size);
-    drop(lock);
-    return ptr;
+    let _lock = MUTEX.lock();
+    return meta::alloc(size);
 }
 
 #[no_mangle]
@@ -45,10 +43,8 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size
-        let lock = MUTEX.lock();
-        let ptr = meta::alloc(size);
-        drop(lock);
-        return ptr;
+        let _lock = MUTEX.lock();
+        return meta::alloc(size);
     } else if size == 0 {
         // if size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr)
@@ -56,12 +52,11 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         return ptr::null_mut();
     }
 
-    let lock = MUTEX.lock();
+    let _lock = MUTEX.lock();
     let new_ptr = meta::alloc(size);
     if new_ptr == ptr::null_mut() {
         return new_ptr;
     }
-
     unsafe {
         let old_block = heap::get_block_meta(p);
         (*old_block).verify(true, true);
@@ -71,7 +66,6 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         // Add old block back to heap structure
         heap::insert(old_block)
     }
-    drop(lock);
     return new_ptr;
 }
 
@@ -81,7 +75,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
         return;
     }
 
-    let lock = MUTEX.lock();
+    let _lock = MUTEX.lock();
     unsafe {
         let block = heap::get_block_meta(ptr);
         if !(*block).verify(false, true) {
@@ -92,7 +86,6 @@ pub extern "C" fn free(ptr: *mut c_void) {
         debug_assert!((*block).size > 0);
         heap::insert(block);
     }
-    drop(lock);
 }
 
 #[panic_handler]
