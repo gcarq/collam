@@ -1,4 +1,4 @@
-use crate::heap::{get_next_block, BlockRegion, BLOCK_REGION_META_SIZE};
+use crate::heap::{get_mem_region, get_next_block, BlockRegion, BLOCK_REGION_META_SIZE};
 use core::ffi::c_void;
 use core::intrinsics;
 use libc_print::libc_eprintln;
@@ -51,11 +51,20 @@ impl IntrusiveList {
 
         unsafe {
             match self.find_higher_block(to_insert) {
-                Some(block) => {
-                    self.insert_before(block, to_insert);
-                    self.scan_merge(to_insert);
+                Err(()) => {
+                    eprintln!(
+                        "double free detected for ptr {:?}",
+                        get_mem_region(to_insert)
+                    );
+                    return;
                 }
-                None => self.insert_after(self.tail.unwrap(), to_insert),
+                Ok(m) => match m {
+                    Some(block) => {
+                        self.insert_before(block, to_insert);
+                        self.scan_merge(to_insert);
+                    }
+                    None => self.insert_after(self.tail.unwrap(), to_insert),
+                },
             }
         }
     }
@@ -143,18 +152,22 @@ impl IntrusiveList {
 
     /// Returns first block that has a higher memory address than the given block.
     /// TODO: implement as binary search
-    fn find_higher_block(&self, to_insert: *mut BlockRegion) -> Option<*mut BlockRegion> {
+    fn find_higher_block(
+        &self,
+        to_insert: *mut BlockRegion,
+    ) -> Result<Option<*mut BlockRegion>, ()> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             if block == to_insert {
-                // TODO: handle case where a already freed element will get added to list
-                panic!("double free detected!");
+                // block is already in list.
+                // One reason for this is double free()
+                return Err(());
             } else if block > to_insert {
-                return Some(block);
+                return Ok(Some(block));
             }
             ptr = unsafe { (*block).next };
         }
-        return None;
+        return Ok(None);
     }
 
     /// Removes the given element from the list and returns it.

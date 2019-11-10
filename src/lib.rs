@@ -58,6 +58,10 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
 
     let lock = MUTEX.lock();
     let new_ptr = meta::alloc(size);
+    if new_ptr == ptr::null_mut() {
+        return new_ptr;
+    }
+
     unsafe {
         let old_block = heap::get_block_meta(p);
         (*old_block).verify(true, true);

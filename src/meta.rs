@@ -19,6 +19,7 @@ pub fn alloc(size: usize) -> *mut c_void {
     } else if let Some(block) = request_block(size) {
         block
     } else {
+        dprintln!("[libdmalloc.so]: failed for size: {}\n", size);
         return ptr::null_mut();
     };
 
