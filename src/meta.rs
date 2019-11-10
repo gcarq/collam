@@ -44,7 +44,7 @@ fn request_block(size: usize) -> Option<*mut heap::BlockRegion> {
     Some(block)
 }
 
-fn sbrk(size: isize) -> Option<*mut c_void> {
+pub fn sbrk(size: isize) -> Option<*mut c_void> {
     let ptr = unsafe { libc::sbrk(size) };
     if ptr == -1_isize as *mut c_void {
         None

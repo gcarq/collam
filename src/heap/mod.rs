@@ -4,14 +4,15 @@ use core::{fmt, mem};
 use libc_print::libc_eprintln;
 
 use crate::heap::list::IntrusiveList;
-use crate::util::align_next_mul_16;
+use crate::meta;
+use crate::util;
 
 mod list;
 
 static mut HEAP: IntrusiveList = IntrusiveList::new();
 
 pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
-const SPLIT_MIN_BLOCK_SIZE: usize = align_next_mul_16(BLOCK_REGION_META_SIZE * 2);
+const SPLIT_MIN_BLOCK_SIZE: usize = util::align_next_mul_16(BLOCK_REGION_META_SIZE * 2);
 const BLOCK_MAGIC: u32 = 0xDEADC0DE;
 
 pub struct BlockRegion {
@@ -66,6 +67,19 @@ impl fmt::Display for BlockRegion {
 /// Inserts a block to the heap structure
 #[inline]
 pub unsafe fn insert(block: *mut BlockRegion) {
+    let ptr = get_next_potential_block(block).cast::<c_void>();
+    if ptr == util::get_program_break() {
+        let dec = BLOCK_REGION_META_SIZE + (*block).size;
+        dprintln!(
+            "[insert]: freeing {} bytes from process (break={:?})",
+            dec,
+            ptr
+        );
+        // TODO: handle sbrk return value
+        meta::sbrk(-1 * dec as isize);
+        return;
+    }
+
     dprintln!("[insert]: {} at {:?}", *block, block);
     HEAP.insert(block);
     if cfg!(feature = "debug") {
@@ -95,8 +109,8 @@ pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
 }
 
 /// Returns a pointer where the next BlockRegion would start.
-unsafe fn get_next_block(block: *mut BlockRegion) -> *mut BlockRegion {
-    let offset = align_next_mul_16(BLOCK_REGION_META_SIZE + (*block).size) as isize;
+unsafe fn get_next_potential_block(block: *mut BlockRegion) -> *mut BlockRegion {
+    let offset = util::align_next_mul_16(BLOCK_REGION_META_SIZE + (*block).size) as isize;
     let rel_block = block.cast::<c_void>().offset(offset).cast::<BlockRegion>();
     (*rel_block).verify(false, false);
     return rel_block;
@@ -107,7 +121,7 @@ unsafe fn get_next_block(block: *mut BlockRegion) -> *mut BlockRegion {
 pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
     unsafe { dprintln!("[split]: {} at {:?}", *block, block) }
 
-    let new_blk_offset = align_next_mul_16(BLOCK_REGION_META_SIZE + size);
+    let new_blk_offset = util::align_next_mul_16(BLOCK_REGION_META_SIZE + size);
     // Check if its possible to split the block with the requested size
     let new_blk_size = unsafe { (*block).size }
         .checked_sub(new_blk_offset)?

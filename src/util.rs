@@ -17,7 +17,6 @@ pub fn alloc_unit(min_size: usize) -> usize {
 
 /// Returns a pointer to the current program break
 #[inline]
-#[allow(dead_code)]
 pub unsafe fn get_program_break() -> *mut c_void {
     libc::sbrk(0)
 }

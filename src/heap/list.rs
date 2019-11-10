@@ -1,7 +1,10 @@
-use crate::heap::{get_mem_region, get_next_block, BlockRegion, BLOCK_REGION_META_SIZE};
 use core::ffi::c_void;
 use core::intrinsics;
+
 use libc_print::libc_eprintln;
+
+use crate::heap;
+use crate::heap::{BlockRegion, BLOCK_REGION_META_SIZE};
 
 #[derive(Copy, Clone)]
 pub struct IntrusiveList {
@@ -54,7 +57,7 @@ impl IntrusiveList {
                 Err(()) => {
                     eprintln!(
                         "double free detected for ptr {:?}",
-                        get_mem_region(to_insert)
+                        heap::get_mem_region(to_insert)
                     );
                     return;
                 }
@@ -120,7 +123,7 @@ impl IntrusiveList {
     /// NOTE: This function does not modify head or tail.
     unsafe fn maybe_merge_with_next(&self, block: *mut BlockRegion) -> Option<*mut BlockRegion> {
         let next = (*block).next?;
-        if get_next_block(block) != next {
+        if heap::get_next_potential_block(block) != next {
             return None;
         }
 
