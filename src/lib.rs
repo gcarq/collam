@@ -1,7 +1,6 @@
 #![feature(stmt_expr_attributes, lang_items, core_intrinsics, core_panic_info)]
 #![no_std]
 
-#[cfg_attr(linux, debug)]
 extern crate libc;
 extern crate libc_print;
 extern crate spin;
@@ -31,11 +30,10 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
         None => panic!("integer overflow detected (nobj={}, size={})", nobj, size),
     };
 
-    let lock = MUTEX.lock();
+    let _lock = MUTEX.lock();
     let ptr = meta::alloc(total_size);
     // Initialize memory region with 0
     unsafe { intrinsics::volatile_set_memory(ptr, 0, total_size) }
-    drop(lock);
     return ptr;
 }
 
@@ -94,7 +92,6 @@ fn panic(info: &panic::PanicInfo) -> ! {
     unsafe { intrinsics::abort() };
 }
 
-//#[lang = "panic_fmt"] extern fn panic_fmt() -> ! { unsafe { intrinsics::abort() } }
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}
 #[lang = "eh_unwind_resume"]

@@ -37,13 +37,13 @@ impl BlockRegion {
         if self.magic != BLOCK_MAGIC {
             if panic {
                 panic!(
-                    "[heap] magic value does not match (got=0x{:X}, expected={:X})",
+                    "[heap] magic value does not match (got=0x{:X}, expected=0x{:X})",
                     self.magic, BLOCK_MAGIC
                 );
             }
             if warn {
                 eprintln!(
-                    "[heap] WARN: magic value does not match (got=0x{:X}, expected={:X}B)",
+                    "[heap] WARN: magic value does not match (got=0x{:X}, expected=0x{:X})",
                     self.magic, BLOCK_MAGIC
                 );
             }
