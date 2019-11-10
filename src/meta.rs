@@ -1,9 +1,8 @@
-use core::ffi::c_void;
-use core::ptr;
+use core::{ffi::c_void, ptr};
 
 use libc_print::libc_eprintln;
 
-use crate::heap;
+use crate::heap::{self, BlockRegion};
 use crate::util;
 
 pub fn alloc(size: usize) -> *mut c_void {
@@ -12,6 +11,7 @@ pub fn alloc(size: usize) -> *mut c_void {
     }
     let size = util::align_next_mul_16(size);
     dprintln!("[libdmalloc.so]: alloc(size={})", size);
+
     // Check if there is already a suitable block allocated
     let block = if let Some(block) = unsafe { heap::pop(size) } {
         block
@@ -22,15 +22,20 @@ pub fn alloc(size: usize) -> *mut c_void {
         dprintln!("[libdmalloc.so]: failed for size: {}\n", size);
         return ptr::null_mut();
     };
-
-    if let Some(rem_block) = heap::split(block, size) {
-        unsafe { heap::insert(rem_block) };
-    }
+    split_insert(block, size);
 
     unsafe {
         dprintln!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
         debug_assert!((*block).size >= size, "requested={}, got={}", size, *block);
         return heap::get_mem_region(block);
+    }
+}
+
+/// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
+/// The remaining block (if any) is added to the heap.
+pub fn split_insert(block: *mut BlockRegion, size: usize) {
+    if let Some(rem_block) = heap::split(block, size) {
+        unsafe { heap::insert(rem_block) };
     }
 }
 

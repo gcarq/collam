@@ -5,8 +5,7 @@ extern crate libc;
 extern crate libc_print;
 extern crate spin;
 
-use core::ffi::c_void;
-use core::{cmp, intrinsics, panic, ptr};
+use core::{cmp, ffi::c_void, intrinsics, panic, ptr};
 
 use libc_print::libc_eprintln;
 
@@ -50,17 +49,33 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         return ptr::null_mut();
     }
 
+    let old_block = unsafe {
+        let block = heap::get_block_meta(p);
+        (*block).verify(true, true);
+        block
+    };
+    let old_block_size = unsafe { (*old_block).size };
     let _lock = MUTEX.lock();
+
+    // shrink allocated block if size is smaller
+    if size < old_block_size {
+        meta::split_insert(old_block, size);
+        return p;
+    }
+
+    // just return pointer if size didn't change
+    if size == old_block_size {
+        return p;
+    }
+
+    // allocate new region to fit size
     let new_ptr = meta::alloc(size);
     if new_ptr == ptr::null_mut() {
         return new_ptr;
     }
+    let copy_size = cmp::min(size, old_block_size);
     unsafe {
-        let old_block = heap::get_block_meta(p);
-        (*old_block).verify(true, true);
-        let copy_size = cmp::min(size, (*old_block).size);
         intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, p, copy_size);
-
         // Add old block back to heap structure
         heap::insert(old_block)
     }

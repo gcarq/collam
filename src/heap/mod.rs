@@ -1,5 +1,4 @@
-use core::ffi::c_void;
-use core::{fmt, mem};
+use core::{ffi::c_void, fmt, mem};
 
 use libc_print::libc_eprintln;
 

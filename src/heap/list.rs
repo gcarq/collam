@@ -1,10 +1,8 @@
-use core::ffi::c_void;
-use core::intrinsics;
+use core::{ffi::c_void, intrinsics};
 
 use libc_print::libc_eprintln;
 
-use crate::heap;
-use crate::heap::{BlockRegion, BLOCK_REGION_META_SIZE};
+use crate::heap::{self, BlockRegion, BLOCK_REGION_META_SIZE};
 
 #[derive(Copy, Clone)]
 pub struct IntrusiveList {
