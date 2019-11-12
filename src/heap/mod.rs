@@ -1,3 +1,4 @@
+use core::ptr::NonNull;
 use core::{ffi::c_void, fmt, mem};
 
 use libc_print::libc_eprintln;
@@ -16,8 +17,8 @@ const BLOCK_MAGIC: u32 = 0xDEADC0DE;
 
 pub struct BlockRegion {
     pub size: usize,
-    next: Option<*mut BlockRegion>,
-    prev: Option<*mut BlockRegion>,
+    next: Option<NonNull<BlockRegion>>,
+    prev: Option<NonNull<BlockRegion>>,
     pub magic: u32,
 }
 
@@ -65,10 +66,10 @@ impl fmt::Display for BlockRegion {
 
 /// Inserts a block to the heap structure
 #[inline]
-pub unsafe fn insert(block: *mut BlockRegion) {
-    let ptr = get_next_potential_block(block).cast::<c_void>();
+pub unsafe fn insert(block: NonNull<BlockRegion>) {
+    let ptr = get_next_potential_block(block).cast::<c_void>().as_ptr();
     if ptr == util::get_program_break() {
-        let dec = BLOCK_REGION_META_SIZE + (*block).size;
+        let dec = BLOCK_REGION_META_SIZE + block.as_ref().size;
         dprintln!(
             "[insert]: freeing {} bytes from process (break={:?})",
             dec,
@@ -79,7 +80,7 @@ pub unsafe fn insert(block: *mut BlockRegion) {
         return;
     }
 
-    dprintln!("[insert]: {} at {:?}", *block, block);
+    dprintln!("[insert]: {} at {:?}", block.as_ref(), block);
     HEAP.insert(block);
     if cfg!(feature = "debug") {
         HEAP.debug();
@@ -88,41 +89,42 @@ pub unsafe fn insert(block: *mut BlockRegion) {
 
 /// Removes and returns a suitable empty block from the heap structure.
 #[inline]
-pub unsafe fn pop(size: usize) -> Option<*mut BlockRegion> {
+pub unsafe fn pop(size: usize) -> Option<NonNull<BlockRegion>> {
     let block = HEAP.pop(size)?;
-    dprintln!("[pop]: {} at {:?}", *block, block);
+    dprintln!("[pop]: {} at {:?}", block.as_ref(), block);
     return Some(block);
 }
 
 /// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
 #[inline]
-pub unsafe fn get_block_meta(ptr: *mut c_void) -> *mut BlockRegion {
-    ptr.cast::<BlockRegion>().offset(-1)
+pub unsafe fn get_block_meta(ptr: *mut c_void) -> NonNull<BlockRegion> {
+    NonNull::new_unchecked(ptr.cast::<BlockRegion>().offset(-1))
 }
 
 /// Returns a pointer to the assigned memory region for the given block
 #[inline]
-pub unsafe fn get_mem_region(block: *mut BlockRegion) -> *mut c_void {
-    (*block).verify(true, true);
-    return block.offset(1).cast::<c_void>();
+pub unsafe fn get_mem_region(block: NonNull<BlockRegion>) -> *mut c_void {
+    block.as_ref().verify(true, true);
+    return block.as_ptr().offset(1).cast::<c_void>();
 }
 
 /// Returns a pointer where the next BlockRegion would start.
-unsafe fn get_next_potential_block(block: *mut BlockRegion) -> *mut BlockRegion {
-    let offset = util::align_next_mul_16(BLOCK_REGION_META_SIZE + (*block).size) as isize;
-    let rel_block = block.cast::<c_void>().offset(offset).cast::<BlockRegion>();
-    (*rel_block).verify(false, false);
+unsafe fn get_next_potential_block(block: NonNull<BlockRegion>) -> NonNull<BlockRegion> {
+    let offset = util::align_next_mul_16(BLOCK_REGION_META_SIZE + block.as_ref().size) as isize;
+    let ptr = block.cast::<c_void>().as_ptr().offset(offset);
+    let rel_block = NonNull::new_unchecked(ptr.cast::<BlockRegion>());
+    rel_block.as_ref().verify(false, false);
     return rel_block;
 }
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
 /// Returns a newly created block with the remaining size or None if split is not possible.
-pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
-    unsafe { dprintln!("[split]: {} at {:?}", *block, block) }
+pub fn split(mut block: NonNull<BlockRegion>, size: usize) -> Option<NonNull<BlockRegion>> {
+    unsafe { dprintln!("[split]: {} at {:?}", block.as_ref(), block) }
 
     let new_blk_offset = util::align_next_mul_16(BLOCK_REGION_META_SIZE + size);
     // Check if its possible to split the block with the requested size
-    let new_blk_size = unsafe { (*block).size }
+    let new_blk_size = unsafe { block.as_ref().size }
         .checked_sub(new_blk_offset)?
         .checked_sub(BLOCK_REGION_META_SIZE)?;
 
@@ -133,24 +135,25 @@ pub fn split(block: *mut BlockRegion, size: usize) -> Option<*mut BlockRegion> {
 
     unsafe {
         // Update size for old block
-        (*block).size = size;
+        block.as_mut().size = size;
         // Create block with remaining size
         let new_block = block
             .cast::<c_void>()
+            .as_ptr()
             .offset(new_blk_offset as isize)
             .cast::<BlockRegion>();
         *new_block = BlockRegion::new(new_blk_size);
 
-        dprintln!("      -> {} at {:?}", *block, block);
+        dprintln!("      -> {} at {:?}", block.as_ref(), block);
         dprintln!("      -> {} at {:?}", *new_block, new_block);
         dprintln!(
             "         distance is {} bytes",
-            new_block as usize - (block as usize + BLOCK_REGION_META_SIZE + (*block).size)
+            new_block as usize - (block.as_ptr() as usize + BLOCK_REGION_META_SIZE + block.as_ref().size)
         );
         debug_assert_eq!(
-            new_block as usize - (block as usize + BLOCK_REGION_META_SIZE + (*block).size),
+            new_block as usize - (block.as_ptr() as usize + BLOCK_REGION_META_SIZE + block.as_ref().size),
             0
         );
-        return Some(new_block);
+        return NonNull::new(new_block);
     };
 }

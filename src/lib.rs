@@ -51,10 +51,10 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
 
     let old_block = unsafe {
         let block = heap::get_block_meta(p);
-        (*block).verify(true, true);
+        block.as_ref().verify(true, true);
         block
     };
-    let old_block_size = unsafe { (*old_block).size };
+    let old_block_size = unsafe { old_block.as_ref().size };
     let _lock = MUTEX.lock();
 
     // shrink allocated block if size is smaller
@@ -91,12 +91,12 @@ pub extern "C" fn free(ptr: *mut c_void) {
     let _lock = MUTEX.lock();
     unsafe {
         let block = heap::get_block_meta(ptr);
-        if !(*block).verify(false, true) {
-            eprintln!("     -> {} at {:?}", *block, block);
+        if !block.as_ref().verify(false, true) {
+            eprintln!("     -> {} at {:?}", block.as_ref(), block);
             return;
         }
         // Add freed block back to heap structure
-        debug_assert!((*block).size > 0);
+        debug_assert!(block.as_ref().size > 0);
         heap::insert(block);
     }
 }

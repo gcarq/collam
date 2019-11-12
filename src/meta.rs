@@ -4,6 +4,7 @@ use libc_print::libc_eprintln;
 
 use crate::heap::{self, BlockRegion};
 use crate::util;
+use core::ptr::NonNull;
 
 pub fn alloc(size: usize) -> *mut c_void {
     if size == 0 {
@@ -25,28 +26,28 @@ pub fn alloc(size: usize) -> *mut c_void {
     split_insert(block, size);
 
     unsafe {
-        dprintln!("[libdmalloc.so]: returning {} at {:?}\n", *block, block);
-        debug_assert!((*block).size >= size, "requested={}, got={}", size, *block);
+        dprintln!("[libdmalloc.so]: returning {} at {:?}\n", block.as_ref(), block);
+        debug_assert!(block.as_ref().size >= size, "requested={}, got={}", size, block.as_ref());
         return heap::get_mem_region(block);
     }
 }
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
 /// The remaining block (if any) is added to the heap.
-pub fn split_insert(block: *mut BlockRegion, size: usize) {
+pub fn split_insert(block: NonNull<BlockRegion>, size: usize) {
     if let Some(rem_block) = heap::split(block, size) {
         unsafe { heap::insert(rem_block) };
     }
 }
 
 /// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
-fn request_block(size: usize) -> Option<*mut heap::BlockRegion> {
+fn request_block(size: usize) -> Option<NonNull<heap::BlockRegion>> {
     let alloc_unit = util::alloc_unit(heap::BLOCK_REGION_META_SIZE + size);
     let block = sbrk(alloc_unit as isize)?.cast::<heap::BlockRegion>();
     unsafe {
         (*block) = heap::BlockRegion::new(alloc_unit);
     }
-    Some(block)
+    NonNull::new(block)
 }
 
 pub fn sbrk(size: isize) -> Option<*mut c_void> {

@@ -1,4 +1,5 @@
 use core::{ffi::c_void, intrinsics};
+use core::ptr::NonNull;
 
 use libc_print::libc_eprintln;
 
@@ -6,8 +7,8 @@ use crate::heap::{self, BlockRegion, BLOCK_REGION_META_SIZE};
 
 #[derive(Copy, Clone)]
 pub struct IntrusiveList {
-    head: Option<*mut BlockRegion>,
-    tail: Option<*mut BlockRegion>,
+    head: Option<NonNull<BlockRegion>>,
+    tail: Option<NonNull<BlockRegion>>,
 }
 
 unsafe impl core::marker::Send for IntrusiveList {}
@@ -21,20 +22,20 @@ impl IntrusiveList {
     }
 
     /// Add a block to the list
-    pub fn insert(&mut self, to_insert: *mut BlockRegion) {
+    pub fn insert(&mut self, to_insert: NonNull<BlockRegion>) {
         unsafe {
             debug_assert_eq!(
-                (*to_insert).prev,
+                to_insert.as_ref().prev,
                 None,
                 "block: {} at {:?}",
-                *to_insert,
+                to_insert.as_ref(),
                 to_insert
             );
             debug_assert_eq!(
-                (*to_insert).next,
+                to_insert.as_ref().next,
                 None,
                 "block: {} at {:?}",
-                *to_insert,
+                to_insert.as_ref(),
                 to_insert
             );
         }
@@ -71,47 +72,47 @@ impl IntrusiveList {
     }
 
     /// Add block to the list before the given element
-    unsafe fn insert_before(&mut self, before: *mut BlockRegion, to_insert: *mut BlockRegion) {
+    unsafe fn insert_before(&mut self, mut before: NonNull<BlockRegion>, mut to_insert: NonNull<BlockRegion>) {
         // Update links in new block
-        (*to_insert).prev = (*before).prev;
-        (*to_insert).next = Some(before);
+        to_insert.as_mut().prev = before.as_ref().prev;
+        to_insert.as_mut().next = Some(before);
 
         // Update link for element after new block
-        (*before).prev = Some(to_insert);
+        before.as_mut().prev = Some(to_insert);
 
         // Update link for element before new block
-        if let Some(prev) = (*to_insert).prev {
-            (*prev).next = Some(to_insert);
+        if let Some(mut prev) = to_insert.as_ref().prev {
+            prev.as_mut().next = Some(to_insert);
         }
         self.update_ends(to_insert);
     }
 
     /// Add block to the list after the given element
-    unsafe fn insert_after(&mut self, after: *mut BlockRegion, to_insert: *mut BlockRegion) {
+    unsafe fn insert_after(&mut self, mut after: NonNull<BlockRegion>, mut to_insert: NonNull<BlockRegion>) {
         // Update links in new block
-        (*to_insert).next = (*after).next;
-        (*to_insert).prev = Some(after);
+        to_insert.as_mut().next = after.as_ref().next;
+        to_insert.as_mut().prev = Some(after);
 
         // Update link for element before new block
-        (*after).next = Some(to_insert);
+        after.as_mut().next = Some(to_insert);
 
         // Update link for element after new block
-        if let Some(next) = (*to_insert).next {
-            (*next).prev = Some(to_insert);
+        if let Some(mut next) = to_insert.as_ref().next {
+            next.as_mut().prev = Some(to_insert);
         }
         self.update_ends(to_insert);
     }
 
     /// Checks if head or tail should be updated with current block
     #[inline]
-    unsafe fn update_ends(&mut self, block: *mut BlockRegion) {
+    unsafe fn update_ends(&mut self, block: NonNull<BlockRegion>) {
         // Update head if necessary
-        if (*block).prev.is_none() {
+        if block.as_ref().prev.is_none() {
             self.head = Some(block);
         }
 
         // Update tail if necessary
-        if (*block).next.is_none() {
+        if block.as_ref().next.is_none() {
             self.tail = Some(block);
         }
     }
@@ -119,31 +120,31 @@ impl IntrusiveList {
     /// Takes pointers to two continuous blocks and merges them.
     /// Returns a merged pointer if merge was possible, None otherwise.
     /// NOTE: This function does not modify head or tail.
-    unsafe fn maybe_merge_with_next(&self, block: *mut BlockRegion) -> Option<*mut BlockRegion> {
-        let next = (*block).next?;
+    unsafe fn maybe_merge_with_next(&self, mut block: NonNull<BlockRegion>) -> Option<NonNull<BlockRegion>> {
+        let next = block.as_ref().next?;
         if heap::get_next_potential_block(block) != next {
             return None;
         }
 
-        dprintln!("[merge]: {} at {:?}", *block, block);
-        dprintln!("       & {} at {:?}", *next, next);
+        dprintln!("[merge]: {} at {:?}", block.as_ref(), block);
+        dprintln!("       & {} at {:?}", next.as_ref(), next);
         // Update related links
-        (*block).next = (*next).next;
-        if let Some(n) = (*block).next {
-            (*n).prev = Some(block);
+        block.as_mut().next = next.as_ref().next;
+        if let Some(mut n) = block.as_ref().next {
+            n.as_mut().prev = Some(block);
         }
         // Update to final size
-        (*block).size += BLOCK_REGION_META_SIZE + (*next).size;
+        block.as_mut().size += BLOCK_REGION_META_SIZE + next.as_ref().size;
 
         // Overwrite BlockRegion meta data for old block to detect double free
-        intrinsics::volatile_set_memory(next.cast::<c_void>(), 0, BLOCK_REGION_META_SIZE);
+        intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_REGION_META_SIZE);
 
-        dprintln!("      -> {} at {:?}", *block, block);
+        dprintln!("      -> {} at {:?}", block.as_ref(), block);
         return Some(block);
     }
 
     /// Iterator from the given block forward and merges all blocks possible.
-    unsafe fn scan_merge(&mut self, block: *mut BlockRegion) {
+    unsafe fn scan_merge(&mut self, block: NonNull<BlockRegion>) {
         let mut ptr = Some(block);
         while let Some(b) = ptr {
             ptr = self.maybe_merge_with_next(b);
@@ -155,8 +156,8 @@ impl IntrusiveList {
     /// TODO: implement as binary search
     fn find_higher_block(
         &self,
-        to_insert: *mut BlockRegion,
-    ) -> Result<Option<*mut BlockRegion>, ()> {
+        to_insert: NonNull<BlockRegion>,
+    ) -> Result<Option<NonNull<BlockRegion>>, ()> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             if block == to_insert {
@@ -166,38 +167,38 @@ impl IntrusiveList {
             } else if block > to_insert {
                 return Ok(Some(block));
             }
-            ptr = unsafe { (*block).next };
+            ptr = unsafe { block.as_ref().next };
         }
         return Ok(None);
     }
 
     /// Removes the given element from the list and returns it.
-    unsafe fn remove(&mut self, elem: *mut BlockRegion) -> *mut BlockRegion {
+    unsafe fn remove(&mut self, mut elem: NonNull<BlockRegion>) -> NonNull<BlockRegion> {
         // Update head
         if let Some(head) = self.head {
             if elem == head {
-                self.head = (*elem).next;
+                self.head = elem.as_ref().next;
             }
         }
         // Update tail
         if let Some(tail) = self.tail {
             if elem == tail {
-                self.tail = (*elem).prev;
+                self.tail = elem.as_ref().prev;
             }
         }
 
         // Update link in previous element
-        if let Some(prev) = (*elem).prev {
-            (*prev).next = (*elem).next;
+        if let Some(mut prev) = elem.as_ref().prev {
+            prev.as_mut().next = elem.as_ref().next;
         }
         // Update link in next element
-        if let Some(next) = (*elem).next {
-            (*next).prev = (*elem).prev;
+        if let Some(mut next) = elem.as_ref().next {
+            next.as_mut().prev = elem.as_ref().prev;
         }
 
         // Clear links in current element
-        (*elem).next = None;
-        (*elem).prev = None;
+        elem.as_mut().next = None;
+        elem.as_mut().prev = None;
         return elem;
     }
 
@@ -207,51 +208,51 @@ impl IntrusiveList {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             unsafe {
-                dprintln!("[debug]: pos: {}\t{} at\t{:?}", i, *block, block);
-                (*block).verify(true, true);
+                dprintln!("[debug]: pos: {}\t{} at\t{:?}", i, block.as_ref(), block);
+                block.as_ref().verify(true, true);
 
-                match (*block).prev {
+                match block.as_ref().prev {
                     Some(prev) => {
-                        debug_assert_eq!((*prev).next.unwrap(), block);
+                        debug_assert_eq!(prev.as_ref().next.unwrap(), block);
                         // rule out self reference
                         debug_assert_ne!(prev, block);
                     }
                     None => debug_assert_eq!(self.head.unwrap(), block),
                 }
 
-                match (*block).next {
+                match block.as_ref().next {
                     Some(next) => {
-                        debug_assert_eq!((*next).prev.unwrap(), block);
+                        debug_assert_eq!(next.as_ref().prev.unwrap(), block);
                         // rule out self reference
                         debug_assert_ne!(next, block);
                     }
                     None => debug_assert_eq!(self.tail.unwrap(), block),
                 }
 
-                if let Some(next) = (*block).next {
+                if let Some(next) = block.as_ref().next {
                     debug_assert!(block < next, "{:?} is not smaller than {:?}", block, next);
                 }
-                ptr = (*block).next;
+                ptr = block.as_ref().next;
                 i += 1;
             }
         }
     }
 
     /// Removes and returns the first suitable block
-    pub fn pop(&mut self, size: usize) -> Option<*mut BlockRegion> {
+    pub fn pop(&mut self, size: usize) -> Option<NonNull<BlockRegion>> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             unsafe {
-                if size <= (*block).size {
+                if size <= block.as_ref().size {
                     dprintln!(
                         "[libdmalloc.so]: found suitable {} at {:?} for size {}",
-                        *block,
+                        *block.as_ptr(),
                         block,
                         size
                     );
                     return Some(self.remove(block));
                 }
-                ptr = (*block).next;
+                ptr = block.as_ref().next;
             }
         }
         None
