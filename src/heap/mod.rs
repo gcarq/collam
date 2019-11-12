@@ -1,5 +1,4 @@
-use core::ptr::NonNull;
-use core::{ffi::c_void, fmt, mem};
+use core::{ffi::c_void, fmt, mem, ptr::NonNull};
 
 use libc_print::libc_eprintln;
 
@@ -148,10 +147,12 @@ pub fn split(mut block: NonNull<BlockRegion>, size: usize) -> Option<NonNull<Blo
         dprintln!("      -> {} at {:?}", *new_block, new_block);
         dprintln!(
             "         distance is {} bytes",
-            new_block as usize - (block.as_ptr() as usize + BLOCK_REGION_META_SIZE + block.as_ref().size)
+            new_block as usize
+                - (block.as_ptr() as usize + BLOCK_REGION_META_SIZE + block.as_ref().size)
         );
         debug_assert_eq!(
-            new_block as usize - (block.as_ptr() as usize + BLOCK_REGION_META_SIZE + block.as_ref().size),
+            new_block as usize
+                - (block.as_ptr() as usize + BLOCK_REGION_META_SIZE + block.as_ref().size),
             0
         );
         return NonNull::new(new_block);

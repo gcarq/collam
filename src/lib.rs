@@ -5,7 +5,7 @@ extern crate libc;
 extern crate libc_print;
 extern crate spin;
 
-use core::{cmp, ffi::c_void, intrinsics, panic, ptr};
+use core::{cmp, ffi::c_void, intrinsics, panic, ptr::null_mut};
 
 use libc_print::libc_eprintln;
 
@@ -46,7 +46,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         // if size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr)
         free(p);
-        return ptr::null_mut();
+        return null_mut();
     }
 
     let old_block = unsafe {
@@ -70,7 +70,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
 
     // allocate new region to fit size
     let new_ptr = meta::alloc(size);
-    if new_ptr == ptr::null_mut() {
+    if new_ptr == null_mut() {
         return new_ptr;
     }
     let copy_size = cmp::min(size, old_block_size);

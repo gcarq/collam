@@ -1,14 +1,14 @@
-use core::{ffi::c_void, ptr};
+use core::ffi::c_void;
+use core::ptr::{null_mut, NonNull};
 
 use libc_print::libc_eprintln;
 
 use crate::heap::{self, BlockRegion};
 use crate::util;
-use core::ptr::NonNull;
 
 pub fn alloc(size: usize) -> *mut c_void {
     if size == 0 {
-        return ptr::null_mut();
+        return null_mut();
     }
     let size = util::align_next_mul_16(size);
     dprintln!("[libdmalloc.so]: alloc(size={})", size);
@@ -21,13 +21,22 @@ pub fn alloc(size: usize) -> *mut c_void {
         block
     } else {
         dprintln!("[libdmalloc.so]: failed for size: {}\n", size);
-        return ptr::null_mut();
+        return null_mut();
     };
     split_insert(block, size);
 
     unsafe {
-        dprintln!("[libdmalloc.so]: returning {} at {:?}\n", block.as_ref(), block);
-        debug_assert!(block.as_ref().size >= size, "requested={}, got={}", size, block.as_ref());
+        dprintln!(
+            "[libdmalloc.so]: returning {} at {:?}\n",
+            block.as_ref(),
+            block
+        );
+        debug_assert!(
+            block.as_ref().size >= size,
+            "requested={}, got={}",
+            size,
+            block.as_ref()
+        );
         return heap::get_mem_region(block);
     }
 }

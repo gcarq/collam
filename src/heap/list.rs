@@ -1,5 +1,4 @@
-use core::{ffi::c_void, intrinsics};
-use core::ptr::NonNull;
+use core::{ffi::c_void, intrinsics, ptr::NonNull};
 
 use libc_print::libc_eprintln;
 
@@ -72,7 +71,11 @@ impl IntrusiveList {
     }
 
     /// Add block to the list before the given element
-    unsafe fn insert_before(&mut self, mut before: NonNull<BlockRegion>, mut to_insert: NonNull<BlockRegion>) {
+    unsafe fn insert_before(
+        &mut self,
+        mut before: NonNull<BlockRegion>,
+        mut to_insert: NonNull<BlockRegion>,
+    ) {
         // Update links in new block
         to_insert.as_mut().prev = before.as_ref().prev;
         to_insert.as_mut().next = Some(before);
@@ -88,7 +91,11 @@ impl IntrusiveList {
     }
 
     /// Add block to the list after the given element
-    unsafe fn insert_after(&mut self, mut after: NonNull<BlockRegion>, mut to_insert: NonNull<BlockRegion>) {
+    unsafe fn insert_after(
+        &mut self,
+        mut after: NonNull<BlockRegion>,
+        mut to_insert: NonNull<BlockRegion>,
+    ) {
         // Update links in new block
         to_insert.as_mut().next = after.as_ref().next;
         to_insert.as_mut().prev = Some(after);
@@ -120,7 +127,10 @@ impl IntrusiveList {
     /// Takes pointers to two continuous blocks and merges them.
     /// Returns a merged pointer if merge was possible, None otherwise.
     /// NOTE: This function does not modify head or tail.
-    unsafe fn maybe_merge_with_next(&self, mut block: NonNull<BlockRegion>) -> Option<NonNull<BlockRegion>> {
+    unsafe fn maybe_merge_with_next(
+        &self,
+        mut block: NonNull<BlockRegion>,
+    ) -> Option<NonNull<BlockRegion>> {
         let next = block.as_ref().next?;
         if heap::get_next_potential_block(block) != next {
             return None;
