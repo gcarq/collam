@@ -1,6 +1,6 @@
 use core::ffi::c_void;
 use core::mem::align_of;
-use core::ptr::NonNull;
+use core::ptr::Unique;
 
 /// Returns a fixed number of bytes that is larger than min_size and
 /// a multiple of _SC_PAGESIZE
@@ -19,17 +19,17 @@ pub fn alloc_unit(min_size: usize) -> usize {
 
 /// Returns a pointer to the current program break
 #[inline]
-pub unsafe fn get_program_break() -> Option<NonNull<c_void>> {
+pub unsafe fn get_program_break() -> Option<Unique<c_void>> {
     sbrk(0)
 }
 
 #[inline]
-pub fn sbrk(size: isize) -> Option<NonNull<c_void>> {
+pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
     let ptr = unsafe { libc::sbrk(size) };
     if ptr == -1_isize as *mut c_void {
         return None;
     }
-    NonNull::new(ptr)
+    Unique::new(ptr)
 }
 
 /// Aligns passed value to libc::max_align_t

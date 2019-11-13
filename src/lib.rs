@@ -1,11 +1,17 @@
-#![feature(stmt_expr_attributes, lang_items, core_intrinsics, core_panic_info)]
+#![feature(
+    stmt_expr_attributes,
+    lang_items,
+    core_intrinsics,
+    core_panic_info,
+    ptr_internals
+)]
 #![no_std]
 
 extern crate libc;
 extern crate libc_print;
 extern crate spin;
 
-use core::ptr::{null_mut, NonNull};
+use core::ptr::{null_mut, Unique};
 use core::{cmp, ffi::c_void, intrinsics, panic};
 
 use libc_print::libc_eprintln;
@@ -60,7 +66,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     }
 
     let old_block = unsafe {
-        let block = heap::get_block_meta(NonNull::new_unchecked(p));
+        let block = heap::get_block_meta(Unique::new_unchecked(p));
         block.as_ref().verify(true, true);
         block
     };
@@ -100,7 +106,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
 
     let _lock = MUTEX.lock();
     unsafe {
-        let block = heap::get_block_meta(NonNull::new_unchecked(ptr));
+        let block = heap::get_block_meta(Unique::new_unchecked(ptr));
         if !block.as_ref().verify(false, true) {
             eprintln!("     -> {} at {:?}", block.as_ref(), block);
             return;

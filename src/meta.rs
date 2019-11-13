@@ -1,12 +1,12 @@
 use core::ffi::c_void;
-use core::ptr::NonNull;
+use core::ptr::Unique;
 
 use libc_print::libc_eprintln;
 
 use crate::heap::{self, BlockRegion};
 use crate::util;
 
-pub fn alloc(size: usize) -> Option<NonNull<c_void>> {
+pub fn alloc(size: usize) -> Option<Unique<c_void>> {
     if size == 0 {
         return None;
     }
@@ -43,14 +43,14 @@ pub fn alloc(size: usize) -> Option<NonNull<c_void>> {
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
 /// The remaining block (if any) is added to the heap.
-pub fn split_insert(block: NonNull<BlockRegion>, size: usize) {
+pub fn split_insert(block: Unique<BlockRegion>, size: usize) {
     if let Some(rem_block) = heap::split(block, size) {
         unsafe { heap::insert(rem_block) };
     }
 }
 
 /// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
-fn request_block(size: usize) -> Option<NonNull<heap::BlockRegion>> {
+fn request_block(size: usize) -> Option<Unique<heap::BlockRegion>> {
     let alloc_unit = util::alloc_unit(heap::BLOCK_REGION_META_SIZE + size);
     let block = util::sbrk(alloc_unit as isize)?.cast::<heap::BlockRegion>();
     unsafe {

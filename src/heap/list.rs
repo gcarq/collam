@@ -1,4 +1,4 @@
-use core::{ffi::c_void, intrinsics, ptr::NonNull};
+use core::{ffi::c_void, intrinsics, ptr::Unique};
 
 use libc_print::libc_eprintln;
 
@@ -7,11 +7,11 @@ use crate::heap::{self, BlockRegion, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZ
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct IntrusiveList {
-    head: Option<NonNull<BlockRegion>>,
-    tail: Option<NonNull<BlockRegion>>,
+    head: Option<Unique<BlockRegion>>,
+    tail: Option<Unique<BlockRegion>>,
 }
 
-unsafe impl core::marker::Send for IntrusiveList {}
+//TODO: remove me. unsafe impl core::marker::Send for IntrusiveList {}
 
 impl IntrusiveList {
     pub const fn new() -> Self {
@@ -22,18 +22,16 @@ impl IntrusiveList {
     }
 
     /// Add a block to the list
-    pub fn insert(&mut self, to_insert: NonNull<BlockRegion>) {
+    pub fn insert(&mut self, to_insert: Unique<BlockRegion>) {
         unsafe {
-            debug_assert_eq!(
-                to_insert.as_ref().prev,
-                None,
+            debug_assert!(
+                to_insert.as_ref().prev.is_none(),
                 "block: {} at {:?}",
                 to_insert.as_ref(),
                 to_insert
             );
-            debug_assert_eq!(
-                to_insert.as_ref().next,
-                None,
+            debug_assert!(
+                to_insert.as_ref().next.is_none(),
                 "block: {} at {:?}",
                 to_insert.as_ref(),
                 to_insert
@@ -42,14 +40,14 @@ impl IntrusiveList {
 
         // Add initial element
         if self.head.is_none() {
-            debug_assert_eq!(self.tail, None);
+            debug_assert!(self.tail.is_none());
             self.head = Some(to_insert);
             self.tail = Some(to_insert);
             return;
         }
 
-        debug_assert_ne!(self.head, None);
-        debug_assert_ne!(self.tail, None);
+        debug_assert!(self.head.is_some());
+        debug_assert!(self.tail.is_some());
 
         unsafe {
             match self.find_higher_block(to_insert) {
@@ -74,8 +72,8 @@ impl IntrusiveList {
     /// Add block to the list before the given element
     unsafe fn insert_before(
         &mut self,
-        mut before: NonNull<BlockRegion>,
-        mut to_insert: NonNull<BlockRegion>,
+        mut before: Unique<BlockRegion>,
+        mut to_insert: Unique<BlockRegion>,
     ) {
         // Update links in new block
         to_insert.as_mut().prev = before.as_ref().prev;
@@ -94,8 +92,8 @@ impl IntrusiveList {
     /// Add block to the list after the given element
     unsafe fn insert_after(
         &mut self,
-        mut after: NonNull<BlockRegion>,
-        mut to_insert: NonNull<BlockRegion>,
+        mut after: Unique<BlockRegion>,
+        mut to_insert: Unique<BlockRegion>,
     ) {
         // Update links in new block
         to_insert.as_mut().next = after.as_ref().next;
@@ -113,7 +111,7 @@ impl IntrusiveList {
 
     /// Checks if head or tail should be updated with current block
     #[inline]
-    unsafe fn update_ends(&mut self, block: NonNull<BlockRegion>) {
+    unsafe fn update_ends(&mut self, block: Unique<BlockRegion>) {
         // Update head if necessary
         if block.as_ref().prev.is_none() {
             self.head = Some(block);
@@ -130,10 +128,10 @@ impl IntrusiveList {
     /// NOTE: This function does not modify head or tail.
     unsafe fn maybe_merge_with_next(
         &self,
-        mut block: NonNull<BlockRegion>,
-    ) -> Option<NonNull<BlockRegion>> {
+        mut block: Unique<BlockRegion>,
+    ) -> Option<Unique<BlockRegion>> {
         let next = block.as_ref().next?;
-        if heap::get_next_potential_block(block) != next {
+        if heap::get_next_potential_block(block).as_ptr() != next.as_ptr() {
             return None;
         }
 
@@ -155,7 +153,7 @@ impl IntrusiveList {
     }
 
     /// Iterator from the given block forward and merges all blocks possible.
-    unsafe fn scan_merge(&mut self, block: NonNull<BlockRegion>) {
+    unsafe fn scan_merge(&mut self, block: Unique<BlockRegion>) {
         let mut ptr = Some(block);
         while let Some(b) = ptr {
             ptr = self.maybe_merge_with_next(b);
@@ -167,16 +165,16 @@ impl IntrusiveList {
     /// TODO: implement as binary search
     fn find_higher_block(
         &self,
-        to_insert: NonNull<BlockRegion>,
-    ) -> Result<Option<NonNull<BlockRegion>>, ()> {
+        to_insert: Unique<BlockRegion>,
+    ) -> Result<Option<Unique<BlockRegion>>, ()> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
-            if block == to_insert {
+            if block.as_ptr() == to_insert.as_ptr() {
                 // block is already in list.
                 // One reason for this is double free()
                 return Err(());
             }
-            if block > to_insert {
+            if block.as_ptr() > to_insert.as_ptr() {
                 return Ok(Some(block));
             }
             ptr = unsafe { block.as_ref().next };
@@ -185,16 +183,16 @@ impl IntrusiveList {
     }
 
     /// Removes the given element from the list and returns it.
-    unsafe fn remove(&mut self, mut elem: NonNull<BlockRegion>) -> NonNull<BlockRegion> {
+    unsafe fn remove(&mut self, mut elem: Unique<BlockRegion>) -> Unique<BlockRegion> {
         // Update head
         if let Some(head) = self.head {
-            if elem == head {
+            if elem.as_ptr() == head.as_ptr() {
                 self.head = elem.as_ref().next;
             }
         }
         // Update tail
         if let Some(tail) = self.tail {
-            if elem == tail {
+            if elem.as_ptr() == tail.as_ptr() {
                 self.tail = elem.as_ref().prev;
             }
         }
@@ -225,24 +223,29 @@ impl IntrusiveList {
 
                 match block.as_ref().prev {
                     Some(prev) => {
-                        debug_assert_eq!(prev.as_ref().next.unwrap(), block);
+                        debug_assert_eq!(prev.as_ref().next.unwrap().as_ptr(), block.as_ptr());
                         // rule out self reference
-                        debug_assert_ne!(prev, block);
+                        debug_assert_ne!(prev.as_ptr(), block.as_ptr());
                     }
-                    None => debug_assert_eq!(self.head.unwrap(), block),
+                    None => debug_assert_eq!(self.head.unwrap().as_ptr(), block.as_ptr()),
                 }
 
                 match block.as_ref().next {
                     Some(next) => {
-                        debug_assert_eq!(next.as_ref().prev.unwrap(), block);
+                        debug_assert_eq!(next.as_ref().prev.unwrap().as_ptr(), block.as_ptr());
                         // rule out self reference
-                        debug_assert_ne!(next, block);
+                        debug_assert_ne!(next.as_ptr(), block.as_ptr());
                     }
-                    None => debug_assert_eq!(self.tail.unwrap(), block),
+                    None => debug_assert_eq!(self.tail.unwrap().as_ptr(), block.as_ptr()),
                 }
 
                 if let Some(next) = block.as_ref().next {
-                    debug_assert!(block < next, "{:?} is not smaller than {:?}", block, next);
+                    debug_assert!(
+                        block.as_ptr() < next.as_ptr(),
+                        "{:?} is not smaller than {:?}",
+                        block,
+                        next
+                    );
                 }
                 ptr = block.as_ref().next;
                 i += 1;
@@ -251,7 +254,7 @@ impl IntrusiveList {
     }
 
     /// Removes and returns the first suitable block
-    pub fn pop(&mut self, size: usize) -> Option<NonNull<BlockRegion>> {
+    pub fn pop(&mut self, size: usize) -> Option<Unique<BlockRegion>> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             unsafe {
