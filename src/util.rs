@@ -1,4 +1,5 @@
 use core::ffi::c_void;
+use core::mem::align_of;
 use core::ptr::NonNull;
 
 /// Returns a fixed number of bytes that is larger than min_size and
@@ -31,9 +32,10 @@ pub fn sbrk(size: isize) -> Option<NonNull<c_void>> {
     NonNull::new(ptr)
 }
 
-/// Align passed value to multiple of 16
-/// TODO: can overflow if size is slightly less than usize::MAX
+/// Aligns passed value to libc::max_align_t
+/// FIXME: can overflow if size is slightly less than usize::MAX
 #[inline]
-pub const fn align_next_mul_16(val: usize) -> usize {
-    (val + 15) & !15usize
+pub const fn align_val(val: usize) -> usize {
+    let align = align_of::<libc::max_align_t>() - 1;
+    (val + align) & !align
 }

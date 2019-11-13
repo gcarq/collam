@@ -10,9 +10,10 @@ mod list;
 static mut HEAP: IntrusiveList = IntrusiveList::new();
 
 pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
-const SPLIT_MIN_BLOCK_SIZE: usize = util::align_next_mul_16(BLOCK_REGION_META_SIZE * 2);
+const SPLIT_MIN_BLOCK_SIZE: usize = util::align_val(BLOCK_REGION_META_SIZE * 2);
 const BLOCK_MAGIC: u32 = 0xDEADC0DE;
 
+#[repr(C)]
 pub struct BlockRegion {
     pub size: usize,
     next: Option<NonNull<BlockRegion>>,
@@ -64,7 +65,6 @@ impl fmt::Display for BlockRegion {
 
 /// Inserts a block to the heap structure.
 /// The block is returned to the OS if blocks end is equivalent to program break.
-#[inline]
 pub unsafe fn insert(block: NonNull<BlockRegion>) {
     let ptr = get_next_potential_block(block).cast::<c_void>();
     if let Some(brk) = util::get_program_break() {
@@ -110,7 +110,7 @@ pub unsafe fn get_mem_region(block: NonNull<BlockRegion>) -> Option<NonNull<c_vo
 
 /// Returns a pointer where the next BlockRegion would start.
 unsafe fn get_next_potential_block(block: NonNull<BlockRegion>) -> NonNull<BlockRegion> {
-    let offset = util::align_next_mul_16(BLOCK_REGION_META_SIZE + block.as_ref().size) as isize;
+    let offset = util::align_val(BLOCK_REGION_META_SIZE + block.as_ref().size) as isize;
     let ptr = block.cast::<c_void>().as_ptr().offset(offset);
     let rel_block = NonNull::new_unchecked(ptr.cast::<BlockRegion>());
     rel_block.as_ref().verify(false, false);
@@ -122,7 +122,7 @@ unsafe fn get_next_potential_block(block: NonNull<BlockRegion>) -> NonNull<Block
 pub fn split(mut block: NonNull<BlockRegion>, size: usize) -> Option<NonNull<BlockRegion>> {
     unsafe { dprintln!("[split]: {} at {:?}", block.as_ref(), block) }
 
-    let new_blk_offset = util::align_next_mul_16(BLOCK_REGION_META_SIZE + size);
+    let new_blk_offset = util::align_val(BLOCK_REGION_META_SIZE + size);
     // Check if its possible to split the block with the requested size
     let new_blk_size = unsafe { block.as_ref().size }
         .checked_sub(new_blk_offset)?

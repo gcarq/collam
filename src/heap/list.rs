@@ -2,9 +2,10 @@ use core::{ffi::c_void, intrinsics, ptr::NonNull};
 
 use libc_print::libc_eprintln;
 
-use crate::heap::{self, BlockRegion, BLOCK_REGION_META_SIZE};
+use crate::heap::{self, BlockRegion, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct IntrusiveList {
     head: Option<NonNull<BlockRegion>>,
     tail: Option<NonNull<BlockRegion>>,
@@ -174,7 +175,8 @@ impl IntrusiveList {
                 // block is already in list.
                 // One reason for this is double free()
                 return Err(());
-            } else if block > to_insert {
+            }
+            if block > to_insert {
                 return Ok(Some(block));
             }
             ptr = unsafe { block.as_ref().next };
@@ -253,7 +255,16 @@ impl IntrusiveList {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             unsafe {
-                if size <= block.as_ref().size {
+                if size == block.as_ref().size {
+                    dprintln!(
+                        "[libdmalloc.so]: found perfect {} at {:?} for size {}",
+                        block.as_ref(),
+                        block,
+                        size
+                    );
+                    return Some(self.remove(block));
+                }
+                if size + SPLIT_MIN_BLOCK_SIZE <= block.as_ref().size {
                     dprintln!(
                         "[libdmalloc.so]: found suitable {} at {:?} for size {}",
                         block.as_ref(),
@@ -262,6 +273,7 @@ impl IntrusiveList {
                     );
                     return Some(self.remove(block));
                 }
+
                 ptr = block.as_ref().next;
             }
         }

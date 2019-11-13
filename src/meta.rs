@@ -10,7 +10,7 @@ pub fn alloc(size: usize) -> Option<NonNull<c_void>> {
     if size == 0 {
         return None;
     }
-    let size = util::align_next_mul_16(size);
+    let size = util::align_val(size);
     dprintln!("[libdmalloc.so]: alloc(size={})", size);
 
     // Check if there is already a suitable block allocated
