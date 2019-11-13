@@ -256,7 +256,7 @@ impl IntrusiveList {
                 if size <= block.as_ref().size {
                     dprintln!(
                         "[libdmalloc.so]: found suitable {} at {:?} for size {}",
-                        *block.as_ptr(),
+                        block.as_ref(),
                         block,
                         size
                     );

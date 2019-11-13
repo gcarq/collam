@@ -1,14 +1,14 @@
 use core::ffi::c_void;
-use core::ptr::{null_mut, NonNull};
+use core::ptr::NonNull;
 
 use libc_print::libc_eprintln;
 
 use crate::heap::{self, BlockRegion};
 use crate::util;
 
-pub fn alloc(size: usize) -> *mut c_void {
+pub fn alloc(size: usize) -> Option<NonNull<c_void>> {
     if size == 0 {
-        return null_mut();
+        return None;
     }
     let size = util::align_next_mul_16(size);
     dprintln!("[libdmalloc.so]: alloc(size={})", size);
@@ -21,7 +21,7 @@ pub fn alloc(size: usize) -> *mut c_void {
         block
     } else {
         dprintln!("[libdmalloc.so]: failed for size: {}\n", size);
-        return null_mut();
+        return None;
     };
     split_insert(block, size);
 
@@ -52,18 +52,9 @@ pub fn split_insert(block: NonNull<BlockRegion>, size: usize) {
 /// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
 fn request_block(size: usize) -> Option<NonNull<heap::BlockRegion>> {
     let alloc_unit = util::alloc_unit(heap::BLOCK_REGION_META_SIZE + size);
-    let block = sbrk(alloc_unit as isize)?.cast::<heap::BlockRegion>();
+    let block = util::sbrk(alloc_unit as isize)?.cast::<heap::BlockRegion>();
     unsafe {
-        (*block) = heap::BlockRegion::new(alloc_unit);
+        (*block.as_ptr()) = heap::BlockRegion::new(alloc_unit);
     }
-    NonNull::new(block)
-}
-
-pub fn sbrk(size: isize) -> Option<*mut c_void> {
-    let ptr = unsafe { libc::sbrk(size) };
-    if ptr == -1_isize as *mut c_void {
-        None
-    } else {
-        Some(ptr)
-    }
+    Some(block)
 }

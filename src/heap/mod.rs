@@ -3,7 +3,6 @@ use core::{ffi::c_void, fmt, mem, ptr::NonNull};
 use libc_print::libc_eprintln;
 
 use crate::heap::list::IntrusiveList;
-use crate::meta;
 use crate::util;
 
 mod list;
@@ -63,20 +62,22 @@ impl fmt::Display for BlockRegion {
     }
 }
 
-/// Inserts a block to the heap structure
+/// Inserts a block to the heap structure.
+/// The block is returned to the OS if blocks end is equivalent to program break.
 #[inline]
 pub unsafe fn insert(block: NonNull<BlockRegion>) {
-    let ptr = get_next_potential_block(block).cast::<c_void>().as_ptr();
-    if ptr == util::get_program_break() {
-        let dec = BLOCK_REGION_META_SIZE + block.as_ref().size;
-        dprintln!(
-            "[insert]: freeing {} bytes from process (break={:?})",
-            dec,
-            ptr
-        );
-        // TODO: handle sbrk return value
-        meta::sbrk(-1 * dec as isize);
-        return;
+    let ptr = get_next_potential_block(block).cast::<c_void>();
+    if let Some(brk) = util::get_program_break() {
+        if ptr == brk {
+            let offset = BLOCK_REGION_META_SIZE + block.as_ref().size;
+            dprintln!(
+                "[insert]: freeing {} bytes from process (break={:?})",
+                offset,
+                ptr
+            );
+            util::sbrk(-1 * offset as isize);
+            return;
+        }
     }
 
     dprintln!("[insert]: {} at {:?}", block.as_ref(), block);
@@ -96,15 +97,15 @@ pub unsafe fn pop(size: usize) -> Option<NonNull<BlockRegion>> {
 
 /// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
 #[inline]
-pub unsafe fn get_block_meta(ptr: *mut c_void) -> NonNull<BlockRegion> {
-    NonNull::new_unchecked(ptr.cast::<BlockRegion>().offset(-1))
+pub unsafe fn get_block_meta(ptr: NonNull<c_void>) -> NonNull<BlockRegion> {
+    NonNull::new_unchecked(ptr.cast::<BlockRegion>().as_ptr().offset(-1))
 }
 
 /// Returns a pointer to the assigned memory region for the given block
 #[inline]
-pub unsafe fn get_mem_region(block: NonNull<BlockRegion>) -> *mut c_void {
+pub unsafe fn get_mem_region(block: NonNull<BlockRegion>) -> Option<NonNull<c_void>> {
     block.as_ref().verify(true, true);
-    return block.as_ptr().offset(1).cast::<c_void>();
+    return NonNull::new(block.as_ptr().offset(1).cast::<c_void>());
 }
 
 /// Returns a pointer where the next BlockRegion would start.

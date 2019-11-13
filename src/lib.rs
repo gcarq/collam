@@ -5,7 +5,8 @@ extern crate libc;
 extern crate libc_print;
 extern crate spin;
 
-use core::{cmp, ffi::c_void, intrinsics, panic, ptr::null_mut};
+use core::ptr::{null_mut, NonNull};
+use core::{cmp, ffi::c_void, intrinsics, panic};
 
 use libc_print::libc_eprintln;
 
@@ -19,7 +20,10 @@ static MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 #[no_mangle]
 pub extern "C" fn malloc(size: usize) -> *mut c_void {
     let _lock = MUTEX.lock();
-    return meta::alloc(size);
+    match meta::alloc(size) {
+        Some(p) => p.as_ptr(),
+        None => null_mut(),
+    }
 }
 
 #[no_mangle]
@@ -30,7 +34,10 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     };
 
     let _lock = MUTEX.lock();
-    let ptr = meta::alloc(total_size);
+    let ptr = match meta::alloc(total_size) {
+        Some(p) => p.as_ptr(),
+        None => return null_mut(),
+    };
     // Initialize memory region with 0
     unsafe { intrinsics::volatile_set_memory(ptr, 0, total_size) }
     return ptr;
@@ -41,7 +48,10 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size
         let _lock = MUTEX.lock();
-        return meta::alloc(size);
+        return match meta::alloc(size) {
+            Some(p) => p.as_ptr(),
+            None => null_mut(),
+        };
     } else if size == 0 {
         // if size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr)
@@ -50,7 +60,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     }
 
     let old_block = unsafe {
-        let block = heap::get_block_meta(p);
+        let block = heap::get_block_meta(NonNull::new_unchecked(p));
         block.as_ref().verify(true, true);
         block
     };
@@ -69,10 +79,10 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     }
 
     // allocate new region to fit size
-    let new_ptr = meta::alloc(size);
-    if new_ptr == null_mut() {
-        return new_ptr;
-    }
+    let new_ptr = match meta::alloc(size) {
+        Some(p) => p.as_ptr(),
+        None => return null_mut(),
+    };
     let copy_size = cmp::min(size, old_block_size);
     unsafe {
         intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, p, copy_size);
@@ -90,7 +100,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
 
     let _lock = MUTEX.lock();
     unsafe {
-        let block = heap::get_block_meta(ptr);
+        let block = heap::get_block_meta(NonNull::new_unchecked(ptr));
         if !block.as_ref().verify(false, true) {
             eprintln!("     -> {} at {:?}", block.as_ref(), block);
             return;
