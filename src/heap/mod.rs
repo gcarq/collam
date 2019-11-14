@@ -83,7 +83,7 @@ pub unsafe fn insert(block: Unique<BlockRegion>) {
     dprintln!("[insert]: {} at {:?}", block.as_ref(), block);
     HEAP.insert(block);
     if cfg!(feature = "debug") {
-        //HEAP.debug();
+        HEAP.debug();
     }
 }
 

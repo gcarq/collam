@@ -61,11 +61,13 @@ impl IntrusiveList {
                 Ok(m) => match m {
                     Some(block) => {
                         self.insert_before(block, to_insert);
-                        self.scan_merge(to_insert);
                     }
                     None => self.insert_after(self.tail.unwrap(), to_insert),
                 },
             }
+            // TODO: benchmark and/or remove me
+            // self.scan_merge(to_insert);
+            self.update_ends(self.maybe_merge_adjacent(to_insert));
         }
     }
 
@@ -86,7 +88,6 @@ impl IntrusiveList {
         if let Some(mut prev) = to_insert.as_ref().prev {
             prev.as_mut().next = Some(to_insert);
         }
-        self.update_ends(to_insert);
     }
 
     /// Add block to the list after the given element
@@ -106,7 +107,6 @@ impl IntrusiveList {
         if let Some(mut next) = to_insert.as_ref().next {
             next.as_mut().prev = Some(to_insert);
         }
-        self.update_ends(to_insert);
     }
 
     /// Checks if head or tail should be updated with current block
@@ -123,10 +123,10 @@ impl IntrusiveList {
         }
     }
 
-    /// Takes pointers to two continuous blocks and merges them.
+    /// Takes a pointer to a block and tries to merge it with next.
     /// Returns a merged pointer if merge was possible, None otherwise.
     /// NOTE: This function does not modify head or tail.
-    unsafe fn maybe_merge_with_next(
+    unsafe fn maybe_merge_next(
         &self,
         mut block: Unique<BlockRegion>,
     ) -> Option<Unique<BlockRegion>> {
@@ -152,13 +152,36 @@ impl IntrusiveList {
         return Some(block);
     }
 
-    /// Iterator from the given block forward and merges all blocks possible.
+    /// Takes a pointer to a block and tries to merge it with prev.
+    /// Returns a merged pointer if merge was possible, None otherwise.
+    /// NOTE: This function does not modify head or tail.
+    #[inline]
+    unsafe fn maybe_merge_prev(&self, block: Unique<BlockRegion>) -> Option<Unique<BlockRegion>> {
+        match block.as_ref().prev {
+            Some(prev) => self.maybe_merge_next(prev),
+            None => None,
+        }
+    }
+
+    /// Iterates from the block.prev forward and merges all blocks possible.
+    #[inline]
+    #[allow(dead_code)]
     unsafe fn scan_merge(&mut self, block: Unique<BlockRegion>) {
+        let block = self.maybe_merge_prev(block).unwrap_or(block);
+
         let mut ptr = Some(block);
         while let Some(b) = ptr {
-            ptr = self.maybe_merge_with_next(b);
+            ptr = self.maybe_merge_next(b);
         }
         self.update_ends(block);
+    }
+
+    /// Merges adjacent blocks if possible.
+    /// Always returns a pointer to a block.
+    #[inline]
+    unsafe fn maybe_merge_adjacent(&self, block: Unique<BlockRegion>) -> Unique<BlockRegion> {
+        let block = self.maybe_merge_prev(block).unwrap_or(block);
+        return self.maybe_merge_next(block).unwrap_or(block);
     }
 
     /// Returns first block that has a higher memory address than the given block.
@@ -254,6 +277,7 @@ impl IntrusiveList {
     }
 
     /// Removes and returns the first suitable block
+    #[inline]
     pub fn pop(&mut self, size: usize) -> Option<Unique<BlockRegion>> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
