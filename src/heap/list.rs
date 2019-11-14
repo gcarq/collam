@@ -65,9 +65,8 @@ impl IntrusiveList {
                     None => self.insert_after(self.tail.unwrap(), to_insert),
                 },
             }
-            // TODO: benchmark and/or remove me
-            // self.scan_merge(to_insert);
-            self.update_ends(self.maybe_merge_adjacent(to_insert));
+            let inserted = self.maybe_merge_adjacent(to_insert);
+            self.update_ends(inserted);
         }
     }
 
@@ -163,19 +162,6 @@ impl IntrusiveList {
         }
     }
 
-    /// Iterates from the block.prev forward and merges all blocks possible.
-    #[inline]
-    #[allow(dead_code)]
-    unsafe fn scan_merge(&mut self, block: Unique<BlockRegion>) {
-        let block = self.maybe_merge_prev(block).unwrap_or(block);
-
-        let mut ptr = Some(block);
-        while let Some(b) = ptr {
-            ptr = self.maybe_merge_next(b);
-        }
-        self.update_ends(block);
-    }
-
     /// Merges adjacent blocks if possible.
     /// Always returns a pointer to a block.
     #[inline]
@@ -186,6 +172,7 @@ impl IntrusiveList {
 
     /// Returns first block that has a higher memory address than the given block.
     /// TODO: implement as binary search
+    #[inline]
     fn find_higher_block(
         &self,
         to_insert: Unique<BlockRegion>,
