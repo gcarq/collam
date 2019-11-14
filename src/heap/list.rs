@@ -22,7 +22,7 @@ impl IntrusiveList {
     }
 
     /// Add a block to the list
-    pub fn insert(&mut self, to_insert: Unique<BlockRegion>) {
+    pub fn insert(&mut self, to_insert: Unique<BlockRegion>) -> Result<(), ()> {
         unsafe {
             debug_assert!(
                 to_insert.as_ref().prev.is_none(),
@@ -43,31 +43,21 @@ impl IntrusiveList {
             debug_assert!(self.tail.is_none());
             self.head = Some(to_insert);
             self.tail = Some(to_insert);
-            return;
+            return Ok(());
         }
 
         debug_assert!(self.head.is_some());
         debug_assert!(self.tail.is_some());
 
         unsafe {
-            match self.find_higher_block(to_insert) {
-                Err(()) => {
-                    eprintln!(
-                        "double free detected for ptr {:?}",
-                        heap::get_mem_region(to_insert)
-                    );
-                    return;
-                }
-                Ok(m) => match m {
-                    Some(block) => {
-                        self.insert_before(block, to_insert);
-                    }
-                    None => self.insert_after(self.tail.unwrap(), to_insert),
-                },
+            match self.find_higher_block(to_insert)? {
+                Some(block) => self.insert_before(block, to_insert),
+                None => self.insert_after(self.tail.unwrap(), to_insert),
             }
             let inserted = self.maybe_merge_adjacent(to_insert);
             self.update_ends(inserted);
         }
+        Ok(())
     }
 
     /// Add block to the list before the given element

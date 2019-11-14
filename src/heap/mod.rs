@@ -81,7 +81,9 @@ pub unsafe fn insert(block: Unique<BlockRegion>) {
     }
 
     dprintln!("[insert]: {} at {:?}", block.as_ref(), block);
-    HEAP.insert(block);
+    if HEAP.insert(block).is_err() {
+        eprintln!("double free detected for ptr {:?}", get_mem_region(block));
+    }
     if cfg!(feature = "debug") {
         HEAP.debug();
     }
