@@ -122,6 +122,7 @@ unsafe fn get_next_potential_block(block: Unique<BlockRegion>) -> Unique<BlockRe
 pub fn split(mut block: Unique<BlockRegion>, size: usize) -> Option<Unique<BlockRegion>> {
     unsafe { dprintln!("[split]: {} at {:?}", block.as_ref(), block) }
 
+    let size = util::align_val(size);
     let new_blk_offset = util::align_val(BLOCK_REGION_META_SIZE + size);
     // Check if its possible to split the block with the requested size
     let new_blk_size = unsafe { block.as_ref().size }

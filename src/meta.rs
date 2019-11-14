@@ -10,9 +10,8 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
     if size == 0 {
         return None;
     }
-    let size = util::align_val(size);
-    dprintln!("[libdmalloc.so]: alloc(size={})", size);
 
+    dprintln!("[libdmalloc.so]: alloc(size={})", size);
     // Check if there is already a suitable block allocated
     let block = if let Some(block) = unsafe { heap::pop(size) } {
         block
