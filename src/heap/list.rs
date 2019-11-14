@@ -51,21 +51,89 @@ impl IntrusiveList {
 
         unsafe {
             match self.find_higher_block(to_insert)? {
-                Some(block) => self.insert_before(block, to_insert),
-                None => self.insert_after(self.tail.unwrap(), to_insert),
+                Some(block) => IntrusiveList::insert_before(block, to_insert),
+                None => IntrusiveList::insert_after(self.tail.unwrap(), to_insert),
             }
-            let inserted = self.maybe_merge_adjacent(to_insert);
+            let inserted = IntrusiveList::maybe_merge_adjacent(to_insert);
             self.update_ends(inserted);
         }
         Ok(())
     }
 
+    /// Removes and returns the first suitable block
+    #[inline]
+    pub fn pop(&mut self, size: usize) -> Option<Unique<BlockRegion>> {
+        let mut ptr = self.head;
+        while let Some(block) = ptr {
+            unsafe {
+                if size == block.as_ref().size {
+                    dprintln!(
+                        "[libdmalloc.so]: found perfect {} at {:?} for size {}",
+                        block.as_ref(),
+                        block,
+                        size
+                    );
+                    return Some(self.remove(block));
+                }
+                if size + SPLIT_MIN_BLOCK_SIZE <= block.as_ref().size {
+                    dprintln!(
+                        "[libdmalloc.so]: found suitable {} at {:?} for size {}",
+                        block.as_ref(),
+                        block,
+                        size
+                    );
+                    return Some(self.remove(block));
+                }
+
+                ptr = block.as_ref().next;
+            }
+        }
+        None
+    }
+
+    /// Prints some debugging information about the heap structure
+    pub fn debug(&self) {
+        let mut i = 0;
+        let mut ptr = self.head;
+        while let Some(block) = ptr {
+            unsafe {
+                dprintln!("[debug]: pos: {}\t{} at\t{:?}", i, block.as_ref(), block);
+                block.as_ref().verify(true, true);
+
+                match block.as_ref().prev {
+                    Some(prev) => {
+                        debug_assert_eq!(prev.as_ref().next.unwrap().as_ptr(), block.as_ptr());
+                        // rule out self reference
+                        debug_assert_ne!(prev.as_ptr(), block.as_ptr());
+                    }
+                    None => debug_assert_eq!(self.head.unwrap().as_ptr(), block.as_ptr()),
+                }
+
+                match block.as_ref().next {
+                    Some(next) => {
+                        debug_assert_eq!(next.as_ref().prev.unwrap().as_ptr(), block.as_ptr());
+                        // rule out self reference
+                        debug_assert_ne!(next.as_ptr(), block.as_ptr());
+                    }
+                    None => debug_assert_eq!(self.tail.unwrap().as_ptr(), block.as_ptr()),
+                }
+
+                if let Some(next) = block.as_ref().next {
+                    debug_assert!(
+                        block.as_ptr() < next.as_ptr(),
+                        "{:?} is not smaller than {:?}",
+                        block,
+                        next
+                    );
+                }
+                ptr = block.as_ref().next;
+                i += 1;
+            }
+        }
+    }
+
     /// Add block to the list before the given element
-    unsafe fn insert_before(
-        &mut self,
-        mut before: Unique<BlockRegion>,
-        mut to_insert: Unique<BlockRegion>,
-    ) {
+    unsafe fn insert_before(mut before: Unique<BlockRegion>, mut to_insert: Unique<BlockRegion>) {
         // Update links in new block
         to_insert.as_mut().prev = before.as_ref().prev;
         to_insert.as_mut().next = Some(before);
@@ -80,11 +148,7 @@ impl IntrusiveList {
     }
 
     /// Add block to the list after the given element
-    unsafe fn insert_after(
-        &mut self,
-        mut after: Unique<BlockRegion>,
-        mut to_insert: Unique<BlockRegion>,
-    ) {
+    unsafe fn insert_after(mut after: Unique<BlockRegion>, mut to_insert: Unique<BlockRegion>) {
         // Update links in new block
         to_insert.as_mut().next = after.as_ref().next;
         to_insert.as_mut().prev = Some(after);
@@ -115,10 +179,7 @@ impl IntrusiveList {
     /// Takes a pointer to a block and tries to merge it with next.
     /// Returns a merged pointer if merge was possible, None otherwise.
     /// NOTE: This function does not modify head or tail.
-    unsafe fn maybe_merge_next(
-        &self,
-        mut block: Unique<BlockRegion>,
-    ) -> Option<Unique<BlockRegion>> {
+    unsafe fn maybe_merge_next(mut block: Unique<BlockRegion>) -> Option<Unique<BlockRegion>> {
         let next = block.as_ref().next?;
         if heap::get_next_potential_block(block).as_ptr() != next.as_ptr() {
             return None;
@@ -145,9 +206,9 @@ impl IntrusiveList {
     /// Returns a merged pointer if merge was possible, None otherwise.
     /// NOTE: This function does not modify head or tail.
     #[inline]
-    unsafe fn maybe_merge_prev(&self, block: Unique<BlockRegion>) -> Option<Unique<BlockRegion>> {
+    unsafe fn maybe_merge_prev(block: Unique<BlockRegion>) -> Option<Unique<BlockRegion>> {
         match block.as_ref().prev {
-            Some(prev) => self.maybe_merge_next(prev),
+            Some(prev) => IntrusiveList::maybe_merge_next(prev),
             None => None,
         }
     }
@@ -155,9 +216,9 @@ impl IntrusiveList {
     /// Merges adjacent blocks if possible.
     /// Always returns a pointer to a block.
     #[inline]
-    unsafe fn maybe_merge_adjacent(&self, block: Unique<BlockRegion>) -> Unique<BlockRegion> {
-        let block = self.maybe_merge_prev(block).unwrap_or(block);
-        return self.maybe_merge_next(block).unwrap_or(block);
+    unsafe fn maybe_merge_adjacent(block: Unique<BlockRegion>) -> Unique<BlockRegion> {
+        let block = IntrusiveList::maybe_merge_prev(block).unwrap_or(block);
+        return IntrusiveList::maybe_merge_next(block).unwrap_or(block);
     }
 
     /// Returns first block that has a higher memory address than the given block.
@@ -210,77 +271,5 @@ impl IntrusiveList {
         elem.as_mut().next = None;
         elem.as_mut().prev = None;
         return elem;
-    }
-
-    /// Prints some debugging information about the heap structure
-    pub fn debug(&self) {
-        let mut i = 0;
-        let mut ptr = self.head;
-        while let Some(block) = ptr {
-            unsafe {
-                dprintln!("[debug]: pos: {}\t{} at\t{:?}", i, block.as_ref(), block);
-                block.as_ref().verify(true, true);
-
-                match block.as_ref().prev {
-                    Some(prev) => {
-                        debug_assert_eq!(prev.as_ref().next.unwrap().as_ptr(), block.as_ptr());
-                        // rule out self reference
-                        debug_assert_ne!(prev.as_ptr(), block.as_ptr());
-                    }
-                    None => debug_assert_eq!(self.head.unwrap().as_ptr(), block.as_ptr()),
-                }
-
-                match block.as_ref().next {
-                    Some(next) => {
-                        debug_assert_eq!(next.as_ref().prev.unwrap().as_ptr(), block.as_ptr());
-                        // rule out self reference
-                        debug_assert_ne!(next.as_ptr(), block.as_ptr());
-                    }
-                    None => debug_assert_eq!(self.tail.unwrap().as_ptr(), block.as_ptr()),
-                }
-
-                if let Some(next) = block.as_ref().next {
-                    debug_assert!(
-                        block.as_ptr() < next.as_ptr(),
-                        "{:?} is not smaller than {:?}",
-                        block,
-                        next
-                    );
-                }
-                ptr = block.as_ref().next;
-                i += 1;
-            }
-        }
-    }
-
-    /// Removes and returns the first suitable block
-    #[inline]
-    pub fn pop(&mut self, size: usize) -> Option<Unique<BlockRegion>> {
-        let mut ptr = self.head;
-        while let Some(block) = ptr {
-            unsafe {
-                if size == block.as_ref().size {
-                    dprintln!(
-                        "[libdmalloc.so]: found perfect {} at {:?} for size {}",
-                        block.as_ref(),
-                        block,
-                        size
-                    );
-                    return Some(self.remove(block));
-                }
-                if size + SPLIT_MIN_BLOCK_SIZE <= block.as_ref().size {
-                    dprintln!(
-                        "[libdmalloc.so]: found suitable {} at {:?} for size {}",
-                        block.as_ref(),
-                        block,
-                        size
-                    );
-                    return Some(self.remove(block));
-                }
-
-                ptr = block.as_ref().next;
-            }
-        }
-        None
     }
 }

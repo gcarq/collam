@@ -66,7 +66,8 @@ impl fmt::Display for BlockRegion {
 /// Inserts a block to the heap structure.
 /// The block is returned to the OS if blocks end is equivalent to program break.
 pub unsafe fn insert(block: Unique<BlockRegion>) {
-    let ptr = get_next_potential_block(block).cast::<c_void>();
+    //TODO: fix nullptr
+    /*let ptr = get_next_potential_block(block).cast::<c_void>();
     if let Some(brk) = util::get_program_break() {
         if ptr.as_ptr() == brk.as_ptr() {
             let offset = BLOCK_REGION_META_SIZE + block.as_ref().size;
@@ -78,7 +79,7 @@ pub unsafe fn insert(block: Unique<BlockRegion>) {
             util::sbrk(-1 * offset as isize);
             return;
         }
-    }
+    }*/
 
     dprintln!("[insert]: {} at {:?}", block.as_ref(), block);
     if HEAP.insert(block).is_err() {
