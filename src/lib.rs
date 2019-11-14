@@ -71,8 +71,9 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         block
     };
     let old_block_size = unsafe { old_block.as_ref().size };
-    let _lock = MUTEX.lock();
+    let size = util::align_val(size);
 
+    let _lock = MUTEX.lock();
     // shrink allocated block if size is smaller
     if size < old_block_size {
         meta::split_insert(old_block, size);

@@ -11,14 +11,14 @@ static mut HEAP: IntrusiveList = IntrusiveList::new();
 
 pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
 const SPLIT_MIN_BLOCK_SIZE: usize = util::align_val(BLOCK_REGION_META_SIZE * 2);
-const BLOCK_MAGIC: u32 = 0xDEADC0DE;
+const BLOCK_MAGIC: u16 = 0xDEAD;
 
 #[repr(C)]
 pub struct BlockRegion {
     pub size: usize,
     next: Option<Unique<BlockRegion>>,
     prev: Option<Unique<BlockRegion>>,
-    pub magic: u32,
+    pub magic: u16,
 }
 
 impl BlockRegion {
@@ -83,7 +83,7 @@ pub unsafe fn insert(block: Unique<BlockRegion>) {
     dprintln!("[insert]: {} at {:?}", block.as_ref(), block);
     HEAP.insert(block);
     if cfg!(feature = "debug") {
-        HEAP.debug();
+        //HEAP.debug();
     }
 }
 
@@ -121,8 +121,7 @@ unsafe fn get_next_potential_block(block: Unique<BlockRegion>) -> Unique<BlockRe
 /// Returns a newly created block with the remaining size or None if split is not possible.
 pub fn split(mut block: Unique<BlockRegion>, size: usize) -> Option<Unique<BlockRegion>> {
     unsafe { dprintln!("[split]: {} at {:?}", block.as_ref(), block) }
-
-    let size = util::align_val(size);
+    debug_assert_eq!(size, util::align_val(size));
     let new_blk_offset = util::align_val(BLOCK_REGION_META_SIZE + size);
     // Check if its possible to split the block with the requested size
     let new_blk_size = unsafe { block.as_ref().size }
