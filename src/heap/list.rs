@@ -181,7 +181,8 @@ impl IntrusiveList {
     /// NOTE: This function does not modify head or tail.
     unsafe fn maybe_merge_next(mut block: Unique<BlockRegion>) -> Option<Unique<BlockRegion>> {
         let next = block.as_ref().next?;
-        if heap::get_next_potential_block(block).as_ptr() != next.as_ptr() {
+
+        if heap::get_next_potential_block_ptr(block).as_ptr() != next.cast::<c_void>().as_ptr() {
             return None;
         }
 

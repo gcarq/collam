@@ -66,8 +66,7 @@ impl fmt::Display for BlockRegion {
 /// Inserts a block to the heap structure.
 /// The block is returned to the OS if blocks end is equivalent to program break.
 pub unsafe fn insert(block: Unique<BlockRegion>) {
-    //TODO: fix nullptr
-    /*let ptr = get_next_potential_block(block).cast::<c_void>();
+    let ptr = get_next_potential_block_ptr(block);
     if let Some(brk) = util::get_program_break() {
         if ptr.as_ptr() == brk.as_ptr() {
             let offset = BLOCK_REGION_META_SIZE + block.as_ref().size;
@@ -79,7 +78,7 @@ pub unsafe fn insert(block: Unique<BlockRegion>) {
             util::sbrk(-1 * offset as isize);
             return;
         }
-    }*/
+    }
 
     dprintln!("[insert]: {} at {:?}", block.as_ref(), block);
     if HEAP.insert(block).is_err() {
@@ -112,12 +111,11 @@ pub unsafe fn get_mem_region(block: Unique<BlockRegion>) -> Option<Unique<c_void
 }
 
 /// Returns a pointer where the next BlockRegion would start.
-unsafe fn get_next_potential_block(block: Unique<BlockRegion>) -> Unique<BlockRegion> {
+/// TODO: resolve new_unchecked
+#[inline]
+unsafe fn get_next_potential_block_ptr(block: Unique<BlockRegion>) -> Unique<c_void> {
     let offset = util::align_val(BLOCK_REGION_META_SIZE + block.as_ref().size) as isize;
-    let ptr = block.cast::<c_void>().as_ptr().offset(offset);
-    let rel_block = Unique::new_unchecked(ptr.cast::<BlockRegion>());
-    rel_block.as_ref().verify(false, false);
-    return rel_block;
+    return Unique::new_unchecked(block.cast::<c_void>().as_ptr().offset(offset));
 }
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
