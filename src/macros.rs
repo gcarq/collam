@@ -16,10 +16,17 @@ macro_rules! debug_assert_ne {
 }
 
 #[macro_export]
+macro_rules! println {
+    ($($arg:tt)*) => {
+        libc_eprintln!($($arg)*)
+    };
+}
+
+#[macro_export]
 macro_rules! dprintln {
     ($($arg:tt)*) => {
         if cfg!(feature = "debug") {
-            libc_eprintln!($($arg)*)
+            println!($($arg)*)
         }
     };
 }
@@ -27,6 +34,6 @@ macro_rules! dprintln {
 #[macro_export]
 macro_rules! eprintln {
     ($($arg:tt)*) => {
-        libc_eprintln!($($arg)*)
+        println!($($arg)*)
     };
 }

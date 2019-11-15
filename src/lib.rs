@@ -1,15 +1,17 @@
-#![feature(
-    stmt_expr_attributes,
-    lang_items,
-    core_intrinsics,
-    core_panic_info,
-    ptr_internals
-)]
+#![feature(stmt_expr_attributes)]
+#![feature(lang_items)]
+#![feature(core_intrinsics)]
+#![feature(core_panic_info)]
+#![feature(ptr_internals)]
 #![no_std]
 
 extern crate libc;
 extern crate libc_print;
 extern crate spin;
+
+#[cfg(test)]
+#[macro_use]
+extern crate std;
 
 use core::ptr::{null_mut, Unique};
 use core::{cmp, ffi::c_void, intrinsics, panic};
@@ -18,7 +20,8 @@ use libc_print::libc_eprintln;
 
 mod macros;
 mod heap;
-mod meta;
+#[cfg(feature = "stats")]
+mod stats;
 mod util;
 
 static MUTEX: spin::Mutex<()> = spin::Mutex::new(());
@@ -26,7 +29,7 @@ static MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 #[no_mangle]
 pub extern "C" fn malloc(size: usize) -> *mut c_void {
     let _lock = MUTEX.lock();
-    match meta::alloc(size) {
+    match heap::alloc(size) {
         Some(p) => p.as_ptr(),
         None => null_mut(),
     }
@@ -40,7 +43,7 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     };
 
     let _lock = MUTEX.lock();
-    let ptr = match meta::alloc(total_size) {
+    let ptr = match heap::alloc(total_size) {
         Some(p) => p.as_ptr(),
         None => return null_mut(),
     };
@@ -54,7 +57,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size
         let _lock = MUTEX.lock();
-        return match meta::alloc(size) {
+        return match heap::alloc(size) {
             Some(p) => p.as_ptr(),
             None => null_mut(),
         };
@@ -71,12 +74,12 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         block
     };
     let old_block_size = unsafe { old_block.as_ref().size };
-    let size = util::align_val(size);
+    let size = util::align_scalar(size);
 
     let _lock = MUTEX.lock();
     // shrink allocated block if size is smaller
     if size < old_block_size {
-        meta::split_insert(old_block, size);
+        heap::split_insert(old_block, size);
         return p;
     }
 
@@ -86,7 +89,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     }
 
     // allocate new region to fit size
-    let new_ptr = match meta::alloc(size) {
+    let new_ptr = match heap::alloc(size) {
         Some(p) => p.as_ptr(),
         None => return null_mut(),
     };
@@ -127,13 +130,17 @@ pub extern "C" fn mallopt(param: i32, value: i32) -> i32 {
     );
 }
 
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &panic::PanicInfo) -> ! {
     eprintln!("panic occurred: {:?}", info);
     unsafe { intrinsics::abort() };
 }
 
+#[cfg(not(test))]
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}
+
+#[cfg(not(test))]
 #[lang = "eh_unwind_resume"]
 extern "C" fn eh_unwind_resume() {}

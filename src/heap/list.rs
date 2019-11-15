@@ -4,14 +4,11 @@ use libc_print::libc_eprintln;
 
 use crate::heap::{self, BlockRegion, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
 
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct IntrusiveList {
-    head: Option<Unique<BlockRegion>>,
-    tail: Option<Unique<BlockRegion>>,
+    pub head: Option<Unique<BlockRegion>>,
+    pub tail: Option<Unique<BlockRegion>>,
 }
-
-//TODO: remove me. unsafe impl core::marker::Send for IntrusiveList {}
 
 impl IntrusiveList {
     pub const fn new() -> Self {
@@ -92,6 +89,7 @@ impl IntrusiveList {
     }
 
     /// Prints some debugging information about the heap structure
+    #[cfg(feature = "debug")]
     pub fn debug(&self) {
         let mut i = 0;
         let mut ptr = self.head;
