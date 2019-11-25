@@ -206,10 +206,7 @@ impl IntrusiveList {
     /// NOTE: This function does not modify head or tail.
     #[inline]
     unsafe fn maybe_merge_prev(block: Unique<BlockRegion>) -> Option<Unique<BlockRegion>> {
-        match block.as_ref().prev {
-            Some(prev) => IntrusiveList::maybe_merge_next(prev),
-            None => None,
-        }
+        IntrusiveList::maybe_merge_next(block.as_ref().prev?)
     }
 
     /// Merges adjacent blocks if possible.

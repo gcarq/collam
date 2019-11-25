@@ -14,9 +14,9 @@ pub fn alloc_unit(min_size: usize) -> usize {
 }
 
 /// Returns a pointer to the current program break
-#[inline]
+#[inline(always)]
 pub fn get_program_break() -> Option<Unique<c_void>> {
-    unsafe {sbrk(0)}
+    sbrk(0)
 }
 
 #[inline]
@@ -33,14 +33,13 @@ pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
 }
 
 /// Aligns passed value to libc::max_align_t
-/// FIXME: can overflow if size is slightly less than usize::MAX
-#[inline]
+#[inline(always)]
 pub const fn align_val(val: usize, align: usize) -> usize {
     (val + align - 1) & !(align - 1)
 }
 
 /// Aligns val to be at lest the size of the largest scalar type (libc::max_align_t)
-#[inline]
+#[inline(always)]
 pub const fn align_scalar(val: usize) -> usize {
     align_val(val, align_of::<libc::max_align_t>())
 }
