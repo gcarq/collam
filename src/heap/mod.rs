@@ -21,11 +21,19 @@ const BLOCK_MAGIC_USED: u16 = 0xDA7A;
 pub struct BlockRegionPtr(Unique<BlockRegion>);
 
 impl BlockRegionPtr {
+    /// Creates a BlockRegionPtr instance from the given memory region raw pointer
+    #[inline(always)]
+    pub unsafe fn from_mem_region(ptr: Unique<c_void>) -> Self {
+        BlockRegionPtr::from(Unique::new_unchecked(
+            ptr.cast::<BlockRegion>().as_ptr().offset(-1),
+        ))
+    }
+
     /// Returns a pointer to the assigned memory region for the given block
     #[inline(always)]
-    pub unsafe fn mem_region(&self) -> Option<Unique<c_void>> {
+    pub fn mem_region(&self) -> Option<Unique<c_void>> {
         self.verify(true, true);
-        return Unique::new(self.0.as_ptr().offset(1).cast::<c_void>());
+        return unsafe { Unique::new(self.0.as_ptr().offset(1).cast::<c_void>()) };
     }
 
     /// Acquires the underlying `*mut` pointer.
@@ -43,6 +51,59 @@ impl BlockRegionPtr {
     #[inline(always)]
     pub const fn cast<U>(self) -> Unique<U> {
         unsafe { Unique::new_unchecked(self.as_ptr() as *mut U) }
+    }
+
+    /// Returns a pointer where the next BlockRegion would start.
+    /// TODO: resolve new_unchecked
+    #[inline(always)]
+    unsafe fn get_next_potential_block_ptr(&self) -> Unique<c_void> {
+        let offset = util::align_scalar(BLOCK_REGION_META_SIZE + self.as_ref().size) as isize;
+        return Unique::new_unchecked(self.cast::<c_void>().as_ptr().offset(offset));
+    }
+
+    /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
+    /// Returns a newly created block with the remaining size or None if split is not possible.
+    pub fn split(&mut self, size: usize) -> Option<BlockRegionPtr> {
+        dprintln!("[split]: {} at {:p}", self.as_ref(), self);
+        debug_assert_eq!(size, util::align_scalar(size));
+        let new_blk_offset = util::align_scalar(BLOCK_REGION_META_SIZE + size);
+        // Check if its possible to split the block with the requested size
+        let new_blk_size = self
+            .as_ref()
+            .size
+            .checked_sub(new_blk_offset)?
+            .checked_sub(BLOCK_REGION_META_SIZE)?;
+
+        if new_blk_size < SPLIT_MIN_BLOCK_SIZE {
+            dprintln!("      -> None");
+            return None;
+        }
+
+        unsafe {
+            // Update size for old block
+            self.as_mut().size = size;
+            // Create block with remaining size
+            let new_block = self
+                .cast::<c_void>()
+                .as_ptr()
+                .offset(new_blk_offset as isize)
+                .cast::<BlockRegion>();
+            *new_block = BlockRegion::new(new_blk_size);
+
+            dprintln!("      -> {} at {:p}", self.as_ref(), self);
+            dprintln!("      -> {} at {:p}", *new_block, new_block);
+            dprintln!(
+                "         distance is {} bytes",
+                new_block as usize
+                    - (self.as_ptr() as usize + BLOCK_REGION_META_SIZE + self.as_ref().size)
+            );
+            debug_assert_eq!(
+                new_block as usize
+                    - (self.as_ptr() as usize + BLOCK_REGION_META_SIZE + self.as_ref().size),
+                0
+            );
+            return Some(BlockRegionPtr::from(Unique::new(new_block)?));
+        };
     }
 
     #[inline]
@@ -135,7 +196,7 @@ pub unsafe fn insert(block: BlockRegionPtr) {
         stats::print();
     }
 
-    let ptr = get_next_potential_block_ptr(block);
+    let ptr = block.get_next_potential_block_ptr();
     if let Some(brk) = util::get_program_break() {
         if ptr.as_ptr() == brk.as_ptr() {
             let offset = BLOCK_REGION_META_SIZE + block.as_ref().size;
@@ -163,67 +224,6 @@ pub unsafe fn pop(size: usize) -> Option<BlockRegionPtr> {
     return Some(block);
 }
 
-/// Returns a pointer to the BlockMeta struct from the given memory region raw pointer
-#[inline(always)]
-pub unsafe fn get_block_meta(ptr: Unique<c_void>) -> BlockRegionPtr {
-    BlockRegionPtr::from(Unique::new_unchecked(
-        ptr.cast::<BlockRegion>().as_ptr().offset(-1),
-    ))
-}
-
-/// Returns a pointer where the next BlockRegion would start.
-/// TODO: resolve new_unchecked
-#[inline(always)]
-unsafe fn get_next_potential_block_ptr(block: BlockRegionPtr) -> Unique<c_void> {
-    let offset = util::align_scalar(BLOCK_REGION_META_SIZE + block.as_ref().size) as isize;
-    return Unique::new_unchecked(block.cast::<c_void>().as_ptr().offset(offset));
-}
-
-/// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
-/// Returns a newly created block with the remaining size or None if split is not possible.
-pub fn split(mut block: BlockRegionPtr, size: usize) -> Option<BlockRegionPtr> {
-    dprintln!("[split]: {} at {:p}", block.as_ref(), block);
-    debug_assert_eq!(size, util::align_scalar(size));
-    let new_blk_offset = util::align_scalar(BLOCK_REGION_META_SIZE + size);
-    // Check if its possible to split the block with the requested size
-    let new_blk_size = block
-        .as_ref()
-        .size
-        .checked_sub(new_blk_offset)?
-        .checked_sub(BLOCK_REGION_META_SIZE)?;
-
-    if new_blk_size < SPLIT_MIN_BLOCK_SIZE {
-        dprintln!("      -> None");
-        return None;
-    }
-
-    unsafe {
-        // Update size for old block
-        block.as_mut().size = size;
-        // Create block with remaining size
-        let new_block = block
-            .cast::<c_void>()
-            .as_ptr()
-            .offset(new_blk_offset as isize)
-            .cast::<BlockRegion>();
-        *new_block = BlockRegion::new(new_blk_size);
-
-        dprintln!("      -> {} at {:p}", block.as_ref(), block);
-        dprintln!("      -> {} at {:p}", *new_block, new_block);
-        dprintln!(
-            "         distance is {} bytes",
-            new_block as usize
-                - (block.as_ptr() as usize + BLOCK_REGION_META_SIZE + block.as_ref().size)
-        );
-        debug_assert_eq!(
-            new_block as usize
-                - (block.as_ptr() as usize + BLOCK_REGION_META_SIZE + block.as_ref().size),
-            0
-        );
-        return Some(BlockRegionPtr::from(Unique::new(new_block)?));
-    };
-}
-
 pub fn alloc(size: usize) -> Option<Unique<c_void>> {
     if size == 0 {
         return None;
@@ -232,7 +232,7 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
     dprintln!("[libdmalloc.so]: alloc(size={})", size);
     let size = util::align_scalar(size);
     // Check if there is already a suitable block allocated
-    let block = if let Some(block) = unsafe { pop(size) } {
+    let mut block = if let Some(block) = unsafe { pop(size) } {
         block
     // Request new block from kernel
     } else if let Some(block) = request_block(size) {
@@ -241,29 +241,27 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
         dprintln!("[libdmalloc.so]: failed for size: {}\n", size);
         return None;
     };
-    split_insert(block, size);
+    split_insert(&mut block, size);
 
-    unsafe {
-        dprintln!(
-            "[libdmalloc.so]: returning {} at {:p}\n",
-            block.as_ref(),
-            block
-        );
-        debug_assert!(
-            block.as_ref().size >= size,
-            "requested={}, got={}",
-            size,
-            block.as_ref()
-        );
-        return block.mem_region();
-    }
+    dprintln!(
+        "[libdmalloc.so]: returning {} at {:p}\n",
+        block.as_ref(),
+        block
+    );
+    debug_assert!(
+        block.as_ref().size >= size,
+        "requested={}, got={}",
+        size,
+        block.as_ref()
+    );
+    return block.mem_region();
 }
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
 /// The remaining block (if any) is added to the heap.
 #[inline]
-pub fn split_insert(block: BlockRegionPtr, size: usize) {
-    if let Some(rem_block) = split(block, size) {
+pub fn split_insert(block: &mut BlockRegionPtr, size: usize) {
+    if let Some(rem_block) = block.split(size) {
         unsafe { insert(rem_block) };
     }
 }

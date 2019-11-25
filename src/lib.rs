@@ -16,6 +16,7 @@ extern crate std;
 use core::ptr::{null_mut, Unique};
 use core::{cmp, ffi::c_void, intrinsics, panic};
 
+use crate::heap::BlockRegionPtr;
 use libc_print::libc_eprintln;
 
 mod macros;
@@ -68,8 +69,8 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         return null_mut();
     }
 
-    let old_block = unsafe {
-        let block = heap::get_block_meta(Unique::new_unchecked(p));
+    let mut old_block = unsafe {
+        let block = BlockRegionPtr::from_mem_region(Unique::new_unchecked(p));
         block.verify(true, true);
         block
     };
@@ -79,7 +80,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     let _lock = MUTEX.lock();
     // shrink allocated block if size is smaller
     if size < old_block_size {
-        heap::split_insert(old_block, size);
+        heap::split_insert(&mut old_block, size);
         return p;
     }
 
@@ -110,7 +111,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
 
     let _lock = MUTEX.lock();
     unsafe {
-        let block = heap::get_block_meta(Unique::new_unchecked(ptr));
+        let block = BlockRegionPtr::from_mem_region(Unique::new_unchecked(ptr));
         if !block.verify(false, true) {
             eprintln!("     -> {} at {:p}", block.as_ref(), block);
             return;

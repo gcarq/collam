@@ -2,7 +2,7 @@ use core::{ffi::c_void, intrinsics};
 
 use libc_print::libc_eprintln;
 
-use crate::heap::{self, BlockRegionPtr, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
+use crate::heap::{BlockRegionPtr, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
 
 #[repr(C)]
 pub struct IntrusiveList {
@@ -176,7 +176,7 @@ impl IntrusiveList {
     unsafe fn maybe_merge_next(mut block: BlockRegionPtr) -> Option<BlockRegionPtr> {
         let next = block.as_ref().next?;
 
-        if heap::get_next_potential_block_ptr(block).as_ptr() != next.cast::<c_void>().as_ptr() {
+        if block.get_next_potential_block_ptr().as_ptr() != next.cast::<c_void>().as_ptr() {
             return None;
         }
 
