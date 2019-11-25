@@ -12,7 +12,8 @@ mod list;
 static mut HEAP: IntrusiveList = IntrusiveList::new();
 
 pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
-const SPLIT_MIN_BLOCK_SIZE: usize = util::align_scalar(BLOCK_REGION_META_SIZE * 2);
+// Minimum size (without meta) for a new block after splitting
+const SPLIT_MIN_BLOCK_SIZE: usize = mem::align_of::<libc::max_align_t>();
 const BLOCK_MAGIC_FREE: u16 = 0xDEAD;
 const BLOCK_MAGIC_USED: u16 = 0xDA7A;
 
@@ -144,7 +145,7 @@ impl AsRef<BlockRegion> for BlockRegionPtr {
 
 impl fmt::Pointer for BlockRegionPtr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:p}", self as *const BlockRegionPtr)
+        write!(f, "{:p}", self.as_ref())
     }
 }
 
@@ -268,10 +269,9 @@ pub fn split_insert(block: &mut BlockRegionPtr, size: usize) {
 
 /// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
 fn request_block(size: usize) -> Option<BlockRegionPtr> {
-    let alloc_unit = util::alloc_unit(BLOCK_REGION_META_SIZE + size);
-    let block = util::sbrk(alloc_unit as isize)?.cast::<BlockRegion>();
-    unsafe {
-        (*block.as_ptr()) = BlockRegion::new(alloc_unit);
-    }
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+    let alloc_size = util::align_val(BLOCK_REGION_META_SIZE + size, page_size);
+    let block = util::sbrk(alloc_size as isize)?.cast::<BlockRegion>();
+    unsafe { (*block.as_ptr()) = BlockRegion::new(alloc_size) }
     return Some(BlockRegionPtr(block));
 }
