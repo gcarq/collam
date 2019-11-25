@@ -70,10 +70,10 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
 
     let old_block = unsafe {
         let block = heap::get_block_meta(Unique::new_unchecked(p));
-        block.as_ref().verify(true, true);
+        block.verify(true, true);
         block
     };
-    let old_block_size = unsafe { old_block.as_ref().size };
+    let old_block_size = old_block.as_ref().size;
     let size = util::align_scalar(size);
 
     let _lock = MUTEX.lock();
@@ -111,8 +111,8 @@ pub extern "C" fn free(ptr: *mut c_void) {
     let _lock = MUTEX.lock();
     unsafe {
         let block = heap::get_block_meta(Unique::new_unchecked(ptr));
-        if !block.as_ref().verify(false, true) {
-            eprintln!("     -> {} at {:?}", block.as_ref(), block);
+        if !block.verify(false, true) {
+            eprintln!("     -> {} at {:p}", block.as_ref(), block);
             return;
         }
         // Add freed block back to heap structure

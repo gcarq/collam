@@ -1,16 +1,16 @@
 use core::ffi::c_void;
 use core::ptr::Unique;
 
-use crate::heap::BlockRegion;
+use crate::heap::BlockRegionPtr;
 use libc_print::libc_eprintln;
 
 static mut HEAP_LOW_ADDR: Option<Unique<c_void>> = None;
 static mut HEAP_HIGH_ADDR: Option<Unique<c_void>> = None;
 
-static mut HEAP_HEAD: Option<Unique<BlockRegion>> = None;
-static mut HEAP_TAIL: Option<Unique<BlockRegion>> = None;
+static mut HEAP_HEAD: Option<BlockRegionPtr> = None;
+static mut HEAP_TAIL: Option<BlockRegionPtr> = None;
 
-pub unsafe fn update_ends(head: Option<Unique<BlockRegion>>, tail: Option<Unique<BlockRegion>>) {
+pub unsafe fn update_ends(head: Option<BlockRegionPtr>, tail: Option<BlockRegionPtr>) {
     HEAP_HEAD = head;
     HEAP_TAIL = tail;
 }
@@ -36,8 +36,8 @@ pub unsafe fn print() {
     if HEAP_HEAD.is_some() && HEAP_TAIL.is_some() {
         let head = HEAP_HEAD.unwrap();
         let tail = HEAP_TAIL.unwrap();
-        println!("[stats]: head: {} at\t{:?}", head.as_ref(), head);
-        println!("[stats]: tail: {} at\t{:?}", tail.as_ref(), tail);
+        println!("[stats]: head: {} at\t{:p}", head.as_ref(), head);
+        println!("[stats]: tail: {} at\t{:p}", tail.as_ref(), tail);
         println!(
             "[stats]: difference between head and tail: {} bytes",
             tail.as_ptr() as usize - head.as_ptr() as usize

@@ -1,13 +1,13 @@
-use core::{ffi::c_void, intrinsics, ptr::Unique};
+use core::{ffi::c_void, intrinsics};
 
 use libc_print::libc_eprintln;
 
-use crate::heap::{self, BlockRegion, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
+use crate::heap::{self, BlockRegionPtr, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
 
 #[repr(C)]
 pub struct IntrusiveList {
-    pub head: Option<Unique<BlockRegion>>,
-    pub tail: Option<Unique<BlockRegion>>,
+    pub head: Option<BlockRegionPtr>,
+    pub tail: Option<BlockRegionPtr>,
 }
 
 impl IntrusiveList {
@@ -19,21 +19,19 @@ impl IntrusiveList {
     }
 
     /// Add a block to the list
-    pub fn insert(&mut self, to_insert: Unique<BlockRegion>) -> Result<(), ()> {
-        unsafe {
-            debug_assert!(
-                to_insert.as_ref().prev.is_none(),
-                "block: {} at {:?}",
-                to_insert.as_ref(),
-                to_insert
-            );
-            debug_assert!(
-                to_insert.as_ref().next.is_none(),
-                "block: {} at {:?}",
-                to_insert.as_ref(),
-                to_insert
-            );
-        }
+    pub fn insert(&mut self, to_insert: BlockRegionPtr) -> Result<(), ()> {
+        debug_assert!(
+            to_insert.as_ref().prev.is_none(),
+            "block: {} at {:p}",
+            to_insert.as_ref(),
+            to_insert
+        );
+        debug_assert!(
+            to_insert.as_ref().next.is_none(),
+            "block: {} at {:p}",
+            to_insert.as_ref(),
+            to_insert
+        );
 
         // Add initial element
         if self.head.is_none() {
@@ -59,13 +57,13 @@ impl IntrusiveList {
 
     /// Removes and returns the first suitable block
     #[inline]
-    pub fn pop(&mut self, size: usize) -> Option<Unique<BlockRegion>> {
+    pub fn pop(&mut self, size: usize) -> Option<BlockRegionPtr> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             unsafe {
                 if size == block.as_ref().size {
                     dprintln!(
-                        "[libdmalloc.so]: found perfect {} at {:?} for size {}",
+                        "[libdmalloc.so]: found perfect {} at {:p} for size {}",
                         block.as_ref(),
                         block,
                         size
@@ -74,7 +72,7 @@ impl IntrusiveList {
                 }
                 if size + SPLIT_MIN_BLOCK_SIZE <= block.as_ref().size {
                     dprintln!(
-                        "[libdmalloc.so]: found suitable {} at {:?} for size {}",
+                        "[libdmalloc.so]: found suitable {} at {:p} for size {}",
                         block.as_ref(),
                         block,
                         size
@@ -94,44 +92,42 @@ impl IntrusiveList {
         let mut i = 0;
         let mut ptr = self.head;
         while let Some(block) = ptr {
-            unsafe {
-                dprintln!("[debug]: pos: {}\t{} at\t{:?}", i, block.as_ref(), block);
-                block.as_ref().verify(true, true);
+            dprintln!("[debug]: pos: {}\t{} at\t{:p}", i, block.as_ref(), block);
+            block.verify(true, true);
 
-                match block.as_ref().prev {
-                    Some(prev) => {
-                        debug_assert_eq!(prev.as_ref().next.unwrap().as_ptr(), block.as_ptr());
-                        // rule out self reference
-                        debug_assert_ne!(prev.as_ptr(), block.as_ptr());
-                    }
-                    None => debug_assert_eq!(self.head.unwrap().as_ptr(), block.as_ptr()),
+            match block.as_ref().prev {
+                Some(prev) => {
+                    debug_assert_eq!(prev.as_ref().next.unwrap().as_ptr(), block.as_ptr());
+                    // rule out self reference
+                    debug_assert_ne!(prev.as_ptr(), block.as_ptr());
                 }
-
-                match block.as_ref().next {
-                    Some(next) => {
-                        debug_assert_eq!(next.as_ref().prev.unwrap().as_ptr(), block.as_ptr());
-                        // rule out self reference
-                        debug_assert_ne!(next.as_ptr(), block.as_ptr());
-                    }
-                    None => debug_assert_eq!(self.tail.unwrap().as_ptr(), block.as_ptr()),
-                }
-
-                if let Some(next) = block.as_ref().next {
-                    debug_assert!(
-                        block.as_ptr() < next.as_ptr(),
-                        "{:?} is not smaller than {:?}",
-                        block,
-                        next
-                    );
-                }
-                ptr = block.as_ref().next;
-                i += 1;
+                None => debug_assert_eq!(self.head.unwrap().as_ptr(), block.as_ptr()),
             }
+
+            match block.as_ref().next {
+                Some(next) => {
+                    debug_assert_eq!(next.as_ref().prev.unwrap().as_ptr(), block.as_ptr());
+                    // rule out self reference
+                    debug_assert_ne!(next.as_ptr(), block.as_ptr());
+                }
+                None => debug_assert_eq!(self.tail.unwrap().as_ptr(), block.as_ptr()),
+            }
+
+            if let Some(next) = block.as_ref().next {
+                debug_assert!(
+                    block.as_ptr() < next.as_ptr(),
+                    "{:p} is not smaller than {:p}",
+                    block,
+                    next
+                );
+            }
+            ptr = block.as_ref().next;
+            i += 1;
         }
     }
 
     /// Add block to the list before the given element
-    unsafe fn insert_before(mut before: Unique<BlockRegion>, mut to_insert: Unique<BlockRegion>) {
+    unsafe fn insert_before(mut before: BlockRegionPtr, mut to_insert: BlockRegionPtr) {
         // Update links in new block
         to_insert.as_mut().prev = before.as_ref().prev;
         to_insert.as_mut().next = Some(before);
@@ -146,7 +142,7 @@ impl IntrusiveList {
     }
 
     /// Add block to the list after the given element
-    unsafe fn insert_after(mut after: Unique<BlockRegion>, mut to_insert: Unique<BlockRegion>) {
+    unsafe fn insert_after(mut after: BlockRegionPtr, mut to_insert: BlockRegionPtr) {
         // Update links in new block
         to_insert.as_mut().next = after.as_ref().next;
         to_insert.as_mut().prev = Some(after);
@@ -162,7 +158,7 @@ impl IntrusiveList {
 
     /// Checks if head or tail should be updated with current block
     #[inline]
-    unsafe fn update_ends(&mut self, block: Unique<BlockRegion>) {
+    unsafe fn update_ends(&mut self, block: BlockRegionPtr) {
         // Update head if necessary
         if block.as_ref().prev.is_none() {
             self.head = Some(block);
@@ -177,15 +173,15 @@ impl IntrusiveList {
     /// Takes a pointer to a block and tries to merge it with next.
     /// Returns a merged pointer if merge was possible, None otherwise.
     /// NOTE: This function does not modify head or tail.
-    unsafe fn maybe_merge_next(mut block: Unique<BlockRegion>) -> Option<Unique<BlockRegion>> {
+    unsafe fn maybe_merge_next(mut block: BlockRegionPtr) -> Option<BlockRegionPtr> {
         let next = block.as_ref().next?;
 
         if heap::get_next_potential_block_ptr(block).as_ptr() != next.cast::<c_void>().as_ptr() {
             return None;
         }
 
-        dprintln!("[merge]: {} at {:?}", block.as_ref(), block);
-        dprintln!("       & {} at {:?}", next.as_ref(), next);
+        dprintln!("[merge]: {} at {:p}", block.as_ref(), block);
+        dprintln!("       & {} at {:p}", next.as_ref(), next);
         // Update related links
         block.as_mut().next = next.as_ref().next;
         if let Some(mut n) = block.as_ref().next {
@@ -197,7 +193,7 @@ impl IntrusiveList {
         // Overwrite BlockRegion meta data for old block to detect double free
         intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_REGION_META_SIZE);
 
-        dprintln!("      -> {} at {:?}", block.as_ref(), block);
+        dprintln!("      -> {} at {:p}", block.as_ref(), block);
         return Some(block);
     }
 
@@ -205,14 +201,14 @@ impl IntrusiveList {
     /// Returns a merged pointer if merge was possible, None otherwise.
     /// NOTE: This function does not modify head or tail.
     #[inline]
-    unsafe fn maybe_merge_prev(block: Unique<BlockRegion>) -> Option<Unique<BlockRegion>> {
+    unsafe fn maybe_merge_prev(block: BlockRegionPtr) -> Option<BlockRegionPtr> {
         IntrusiveList::maybe_merge_next(block.as_ref().prev?)
     }
 
     /// Merges adjacent blocks if possible.
     /// Always returns a pointer to a block.
     #[inline]
-    unsafe fn maybe_merge_adjacent(block: Unique<BlockRegion>) -> Unique<BlockRegion> {
+    unsafe fn maybe_merge_adjacent(block: BlockRegionPtr) -> BlockRegionPtr {
         let block = IntrusiveList::maybe_merge_prev(block).unwrap_or(block);
         return IntrusiveList::maybe_merge_next(block).unwrap_or(block);
     }
@@ -220,10 +216,7 @@ impl IntrusiveList {
     /// Returns first block that has a higher memory address than the given block.
     /// TODO: implement as binary search
     #[inline]
-    fn find_higher_block(
-        &self,
-        to_insert: Unique<BlockRegion>,
-    ) -> Result<Option<Unique<BlockRegion>>, ()> {
+    fn find_higher_block(&self, to_insert: BlockRegionPtr) -> Result<Option<BlockRegionPtr>, ()> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             if block.as_ptr() == to_insert.as_ptr() {
@@ -234,13 +227,13 @@ impl IntrusiveList {
             if block.as_ptr() > to_insert.as_ptr() {
                 return Ok(Some(block));
             }
-            ptr = unsafe { block.as_ref().next };
+            ptr = block.as_ref().next;
         }
         return Ok(None);
     }
 
     /// Removes the given element from the list and returns it.
-    unsafe fn remove(&mut self, mut elem: Unique<BlockRegion>) -> Unique<BlockRegion> {
+    unsafe fn remove(&mut self, mut elem: BlockRegionPtr) -> BlockRegionPtr {
         // Update head
         if let Some(head) = self.head {
             if elem.as_ptr() == head.as_ptr() {
