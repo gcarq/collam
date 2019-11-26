@@ -16,7 +16,7 @@ extern crate std;
 use core::ptr::{null_mut, Unique};
 use core::{cmp, ffi::c_void, intrinsics, panic};
 
-use crate::heap::BlockRegionPtr;
+use crate::heap::region::BlockRegionPtr;
 use libc_print::libc_eprintln;
 
 mod macros;

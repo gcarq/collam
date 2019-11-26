@@ -1,7 +1,7 @@
 use core::ffi::c_void;
 use core::ptr::Unique;
 
-use crate::heap::BlockRegionPtr;
+use crate::heap::region::BlockRegionPtr;
 use libc_print::libc_eprintln;
 
 static mut HEAP_LOW_ADDR: Option<Unique<c_void>> = None;

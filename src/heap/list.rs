@@ -2,7 +2,7 @@ use core::{ffi::c_void, intrinsics};
 
 use libc_print::libc_eprintln;
 
-use crate::heap::{BlockRegionPtr, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
+use crate::heap::region::{BlockRegionPtr, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
 
 #[repr(C)]
 pub struct IntrusiveList {
@@ -176,7 +176,7 @@ impl IntrusiveList {
     unsafe fn maybe_merge_next(mut block: BlockRegionPtr) -> Option<BlockRegionPtr> {
         let next = block.as_ref().next?;
 
-        if block.get_next_potential_block_ptr().as_ptr() != next.cast::<c_void>().as_ptr() {
+        if block.next_potential_block().as_ptr() != next.cast::<c_void>().as_ptr() {
             return None;
         }
 
@@ -219,7 +219,7 @@ impl IntrusiveList {
     fn find_higher_block(&self, to_insert: BlockRegionPtr) -> Result<Option<BlockRegionPtr>, ()> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
-            if block.as_ptr() == to_insert.as_ptr() {
+            if block == to_insert {
                 // block is already in list.
                 // One reason for this is double free()
                 return Err(());
@@ -236,13 +236,13 @@ impl IntrusiveList {
     unsafe fn remove(&mut self, mut elem: BlockRegionPtr) -> BlockRegionPtr {
         // Update head
         if let Some(head) = self.head {
-            if elem.as_ptr() == head.as_ptr() {
+            if elem == head {
                 self.head = elem.as_ref().next;
             }
         }
         // Update tail
         if let Some(tail) = self.tail {
-            if elem.as_ptr() == tail.as_ptr() {
+            if elem == tail {
                 self.tail = elem.as_ref().prev;
             }
         }
