@@ -54,17 +54,9 @@ mod tests {
     #[test]
     fn test_align_scalar() {
         let mut rng = rand::thread_rng();
+        let align = align_of::<libc::max_align_t>();
         for _ in 0..100 {
-            let align = align_of::<libc::max_align_t>();
-            assert_eq!(align_scalar(rng.gen()) % align_of::<libc::max_align_t>(), 0);
-        }
-    }
-
-    #[test]
-    fn test_alloc_unit() {
-        let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-        for size in vec![0, 1, 901, 5921, 16203, 693023] {
-            assert_eq!(alloc_unit(size) % page_size, 0);
+            assert_eq!(align_scalar(rng.gen()) % align, 0);
         }
     }
 }

@@ -156,6 +156,12 @@ impl fmt::Pointer for BlockRegionPtr {
     }
 }
 
+impl fmt::Debug for BlockRegionPtr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} at {:p}", self.as_ref(), self)
+    }
+}
+
 #[repr(C)]
 pub struct BlockRegion {
     pub size: usize,
@@ -178,5 +184,64 @@ impl fmt::Display for BlockRegion {
             "BlockRegion(size={}, magic=0x{:X}, meta_size={})",
             self.size, self.magic, BLOCK_REGION_META_SIZE,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_block_region_split_ok() {
+        let alloc_size = 1024;
+        let ptr = unsafe { libc::malloc(alloc_size) };
+        let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
+        let rem_region = region.split(alloc_size / 4).unwrap();
+
+        // Assert correctness of initial region
+        assert_eq!(region.as_ref().size, 256);
+        assert_eq!(ptr, region.as_ptr().cast::<c_void>());
+        assert_eq!(region.as_ref().magic, BLOCK_MAGIC_FREE);
+        assert!(region.as_ref().next.is_none());
+        assert!(region.as_ref().prev.is_none());
+
+        // Assert correctness of remaining region
+        assert!(rem_region.as_ptr() > region.as_ptr());
+        unsafe {
+            assert_eq!(
+                region.next_potential_block().as_ptr(),
+                rem_region.cast::<c_void>().as_ptr()
+            );
+        }
+        assert_eq!(
+            rem_region.as_ref().size,
+            alloc_size - (alloc_size / 4) - BLOCK_REGION_META_SIZE * 2
+        );
+        assert_eq!(rem_region.as_ref().magic, BLOCK_MAGIC_FREE);
+        assert!(rem_region.as_ref().next.is_none());
+        assert!(rem_region.as_ref().prev.is_none());
+
+        unsafe { libc::free(ptr) };
+    }
+
+    #[test]
+    fn test_block_region_split_too_small() {
+        let alloc_size = 256;
+        let ptr = unsafe { libc::malloc(alloc_size) };
+        let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
+        let rem_region = region.split(240);
+
+        // Assert correctness of initial region
+        assert_eq!(region.as_ref().size, 256);
+        assert_eq!(ptr, region.as_ptr().cast::<c_void>());
+        assert_eq!(region.as_ref().magic, BLOCK_MAGIC_FREE);
+        assert!(region.as_ref().next.is_none());
+        assert!(region.as_ref().prev.is_none());
+
+        // There should be no remaining region
+        // since 240 will be aligned to 256 and no space is left.
+        assert!(rem_region.is_none());
+
+        unsafe { libc::free(ptr) };
     }
 }
