@@ -244,4 +244,30 @@ mod tests {
 
         unsafe { libc::free(ptr) };
     }
+
+    #[test]
+    fn test_block_region_verify() {
+        let alloc_size = 256;
+        let ptr = unsafe { libc::malloc(alloc_size) };
+        let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
+
+        assert_eq!(region.verify(false, false), true);
+        assert_eq!(region.verify(false, true), true);
+        region.as_mut().magic = 0x1234;
+        assert_eq!(region.verify(false, false), false);
+        assert_eq!(region.verify(false, true), false);
+        unsafe { libc::free(ptr) };
+    }
+
+    #[test]
+    fn test_block_region_mem_region() {
+        let alloc_size = 32;
+        let ptr = unsafe { libc::malloc(alloc_size) };
+        let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
+        let mem = region.mem_region().unwrap();
+        assert!(mem.as_ptr() > region.as_ptr().cast::<c_void>());
+        let region2 = unsafe {BlockRegionPtr::from_mem_region(mem)};
+        assert_eq!(region, region2);
+        unsafe { libc::free(ptr) };
+    }
 }

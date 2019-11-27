@@ -26,7 +26,7 @@ mod stats;
 mod util;
 
 static MUTEX: spin::Mutex<()> = spin::Mutex::new(());
-
+#[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn malloc(size: usize) -> *mut c_void {
     let _lock = MUTEX.lock();
@@ -36,6 +36,7 @@ pub extern "C" fn malloc(size: usize) -> *mut c_void {
     }
 }
 
+#[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     let total_size = match nobj.checked_mul(size) {
@@ -53,6 +54,7 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     return ptr;
 }
 
+#[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
@@ -103,6 +105,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     return new_ptr;
 }
 
+#[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn free(ptr: *mut c_void) {
     if ptr.is_null() {
@@ -123,6 +126,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
 }
 
 // TODO: implement me
+#[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn mallopt(param: i32, value: i32) -> i32 {
     panic!(
