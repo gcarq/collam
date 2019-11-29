@@ -93,7 +93,7 @@ impl IntrusiveList {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             dprintln!("[debug]: pos: {}\t{} at\t{:p}", i, block.as_ref(), block);
-            block.verify(true, true);
+            block.verify(true);
 
             match block.as_ref().prev {
                 Some(prev) => {

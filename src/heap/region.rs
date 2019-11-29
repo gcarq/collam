@@ -44,7 +44,7 @@ impl BlockRegionPtr {
     /// Returns a pointer to the assigned memory region for the given block
     #[inline(always)]
     pub fn mem_region(&self) -> Option<Unique<c_void>> {
-        self.verify(true, true);
+        self.verify(true);
         return unsafe {
             Unique::new(
                 self.as_ptr()
@@ -127,18 +127,12 @@ impl BlockRegionPtr {
     }
 
     #[inline]
-    pub fn verify(&self, panic: bool, warn: bool) -> bool {
+    pub fn verify(&self, panic: bool) -> bool {
         let magic = self.as_ref().magic;
         if magic != BLOCK_MAGIC_FREE {
             if panic {
                 panic!(
                     "[heap] magic value does not match (got=0x{:X}, expected=0x{:X})",
-                    magic, BLOCK_MAGIC_FREE
-                );
-            }
-            if warn {
-                eprintln!(
-                    "[heap] WARN: magic value does not match (got=0x{:X}, expected=0x{:X})",
                     magic, BLOCK_MAGIC_FREE
                 );
             }
@@ -265,16 +259,21 @@ mod tests {
     }
 
     #[test]
-    fn test_block_region_verify() {
+    fn test_block_region_verify_ok() {
         let alloc_size = 256;
         let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
         let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
+        assert_eq!(region.verify(false), true);
+        unsafe { libc::free(ptr) };
+    }
 
-        assert_eq!(region.verify(false, false), true);
-        assert_eq!(region.verify(false, true), true);
+    #[test]
+    fn test_block_region_verify_invalid() {
+        let alloc_size = 256;
+        let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
+        let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
         region.as_mut().magic = 0x1234;
-        assert_eq!(region.verify(false, false), false);
-        assert_eq!(region.verify(false, true), false);
+        assert_eq!(region.verify(false), false);
         unsafe { libc::free(ptr) };
     }
 
@@ -294,7 +293,7 @@ mod tests {
     fn test_block_region_size() {
         let alloc_size = 64;
         let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
-        let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
+        let region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
         assert_eq!(region.size(), 64);
         unsafe { libc::free(ptr) };
     }

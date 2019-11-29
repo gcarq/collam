@@ -73,7 +73,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
 
     let mut old_block = unsafe {
         let block = BlockRegionPtr::from_mem_region(Unique::new_unchecked(p));
-        block.verify(true, true);
+        block.verify(true);
         block
     };
     let old_block_size = old_block.size();
@@ -115,13 +115,34 @@ pub extern "C" fn free(ptr: *mut c_void) {
     let _lock = MUTEX.lock();
     unsafe {
         let block = BlockRegionPtr::from_mem_region(Unique::new_unchecked(ptr));
-        if !block.verify(false, true) {
-            eprintln!("     -> {} at {:p}", block.as_ref(), block);
+        if !block.verify(false) {
+            eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
             return;
         }
         // Add freed block back to heap structure
         heap::insert(block);
     }
+}
+
+#[cfg(not(test))]
+#[no_mangle]
+pub extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
+    if ptr.is_null() {
+        return 0;
+    }
+
+    let _lock = MUTEX.lock();
+    let block = unsafe { BlockRegionPtr::from_mem_region(Unique::new_unchecked(ptr)) };
+    if !block.verify(false) {
+        eprintln!(
+            "malloc_usable_size(): Unable to verify {} at {:p}",
+            block.as_ref(),
+            block
+        );
+        return 0;
+    }
+
+    return block.size();
 }
 
 // TODO: implement me
