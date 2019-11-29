@@ -27,13 +27,14 @@ pub unsafe fn insert(block: BlockRegionPtr) {
     let ptr = block.next_potential_block();
     if let Some(brk) = util::get_program_break() {
         if ptr.as_ptr() == brk.as_ptr() {
-            let offset = BLOCK_REGION_META_SIZE + block.as_ref().size;
+            // TODO: make sure value doesn't overflow
+            let offset = -((BLOCK_REGION_META_SIZE + block.as_ref().size) as isize);
             dprintln!(
                 "[insert]: freeing {} bytes from process (break={:?})",
                 offset,
                 ptr
             );
-            util::sbrk(-1 * offset as isize);
+            util::sbrk(offset);
             return;
         }
     }

@@ -31,8 +31,9 @@ impl BlockRegionPtr {
     /// Returns an existing BlockRegionPtr instance from the given memory region raw pointer
     #[inline(always)]
     pub unsafe fn from_mem_region(ptr: Unique<c_void>) -> Self {
+        let offset = -(BLOCK_REGION_META_SIZE as isize);
         BlockRegionPtr(Unique::new_unchecked(
-            ptr.cast::<BlockRegion>().as_ptr().offset(-1),
+            ptr.as_ptr().offset(offset).cast::<BlockRegion>(),
         ))
     }
 
@@ -266,7 +267,7 @@ mod tests {
         let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
         let mem = region.mem_region().unwrap();
         assert!(mem.as_ptr() > region.as_ptr().cast::<c_void>());
-        let region2 = unsafe {BlockRegionPtr::from_mem_region(mem)};
+        let region2 = unsafe { BlockRegionPtr::from_mem_region(mem) };
         assert_eq!(region, region2);
         unsafe { libc::free(ptr) };
     }
