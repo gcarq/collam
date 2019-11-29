@@ -2,7 +2,7 @@ use core::{ffi::c_void, intrinsics};
 
 use libc_print::libc_eprintln;
 
-use crate::heap::region::{BlockRegionPtr, BLOCK_REGION_META_SIZE, SPLIT_MIN_BLOCK_SIZE};
+use crate::heap::region::{BlockRegionPtr, BLOCK_REGION_META_SIZE, BLOCK_REGION_MIN_SIZE};
 
 #[repr(C)]
 pub struct IntrusiveList {
@@ -61,7 +61,7 @@ impl IntrusiveList {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             unsafe {
-                if size == block.as_ref().size {
+                if size == block.size() {
                     dprintln!(
                         "[libdmalloc.so]: found perfect {} at {:p} for size {}",
                         block.as_ref(),
@@ -70,7 +70,7 @@ impl IntrusiveList {
                     );
                     return Some(self.remove(block));
                 }
-                if size + SPLIT_MIN_BLOCK_SIZE <= block.as_ref().size {
+                if size + BLOCK_REGION_MIN_SIZE <= block.size() {
                     dprintln!(
                         "[libdmalloc.so]: found suitable {} at {:p} for size {}",
                         block.as_ref(),
@@ -188,7 +188,7 @@ impl IntrusiveList {
             n.as_mut().prev = Some(block);
         }
         // Update to final size
-        block.as_mut().size += BLOCK_REGION_META_SIZE + next.as_ref().size;
+        block.as_mut().size += BLOCK_REGION_META_SIZE + next.size();
 
         // Overwrite BlockRegion meta data for old block to detect double free
         intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_REGION_META_SIZE);

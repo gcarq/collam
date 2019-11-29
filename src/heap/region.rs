@@ -4,9 +4,12 @@ use libc_print::libc_eprintln;
 
 use crate::util;
 
-pub const BLOCK_REGION_META_SIZE: usize = mem::size_of::<BlockRegion>();
-// Minimum size (without meta) for a new block after splitting
-pub const SPLIT_MIN_BLOCK_SIZE: usize = mem::align_of::<libc::max_align_t>();
+// The required size to store the bare minimum meta data (size + magic value).
+pub const BLOCK_REGION_META_SIZE: usize = util::align_scalar(mem::align_of::<usize>() * 2);
+// The minimal size of a block region if not allocated by the user.
+pub const BLOCK_REGION_MIN_SIZE: usize =
+    util::align_scalar(BLOCK_REGION_META_SIZE + 2 * mem::align_of::<Option<BlockRegionPtr>>());
+
 const BLOCK_MAGIC_FREE: u16 = 0xDEAD;
 const BLOCK_MAGIC_USED: u16 = 0xDA7A;
 
@@ -18,6 +21,7 @@ pub struct BlockRegionPtr(Unique<BlockRegion>);
 impl BlockRegionPtr {
     /// Creates a BlockRegion instance at the given raw pointer for the specified size
     pub unsafe fn new(ptr: *mut c_void, size: usize) -> Self {
+        debug_assert_eq!(size, util::align_scalar(size));
         let ptr = ptr.cast::<BlockRegion>();
         *ptr = BlockRegion {
             size,
@@ -41,7 +45,13 @@ impl BlockRegionPtr {
     #[inline(always)]
     pub fn mem_region(&self) -> Option<Unique<c_void>> {
         self.verify(true, true);
-        return unsafe { Unique::new(self.0.as_ptr().offset(1).cast::<c_void>()) };
+        return unsafe {
+            Unique::new(
+                self.as_ptr()
+                    .cast::<c_void>()
+                    .offset(BLOCK_REGION_META_SIZE as isize),
+            )
+        };
     }
 
     /// Acquires the underlying `*mut` pointer.
@@ -64,6 +74,14 @@ impl BlockRegionPtr {
         return Unique::new_unchecked(self.cast::<c_void>().as_ptr().offset(offset));
     }
 
+    /// Returns the allocatable size available for the user
+    #[inline(always)]
+    pub fn size(&self) -> usize {
+        let size = self.as_ref().size;
+        debug_assert_eq!(size, util::align_scalar(size));
+        return size;
+    }
+
     /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
     /// Returns a newly created block with the remaining size or None if split is not possible.
     pub fn split(&mut self, size: usize) -> Option<BlockRegionPtr> {
@@ -77,7 +95,7 @@ impl BlockRegionPtr {
             .checked_sub(new_blk_offset)?
             .checked_sub(BLOCK_REGION_META_SIZE)?;
 
-        if new_blk_size < SPLIT_MIN_BLOCK_SIZE {
+        if new_blk_size < BLOCK_REGION_MIN_SIZE {
             dprintln!("      -> None");
             return None;
         }
@@ -165,10 +183,10 @@ impl fmt::Debug for BlockRegionPtr {
 
 #[repr(C)]
 pub struct BlockRegion {
-    pub size: usize,
+    pub size: usize, // TODO: make private
+    magic: u16,
     pub next: Option<BlockRegionPtr>,
     pub prev: Option<BlockRegionPtr>,
-    magic: u16,
 }
 
 impl fmt::Display for BlockRegion {
@@ -195,7 +213,7 @@ mod tests {
     #[test]
     fn test_block_region_split_ok() {
         let alloc_size = 1024;
-        let ptr = unsafe { libc::malloc(alloc_size) };
+        let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
         let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
         let rem_region = region.split(alloc_size / 4).unwrap();
 
@@ -228,7 +246,7 @@ mod tests {
     #[test]
     fn test_block_region_split_too_small() {
         let alloc_size = 256;
-        let ptr = unsafe { libc::malloc(alloc_size) };
+        let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
         let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
         let rem_region = region.split(240);
 
@@ -249,7 +267,7 @@ mod tests {
     #[test]
     fn test_block_region_verify() {
         let alloc_size = 256;
-        let ptr = unsafe { libc::malloc(alloc_size) };
+        let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
         let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
 
         assert_eq!(region.verify(false, false), true);
@@ -262,13 +280,22 @@ mod tests {
 
     #[test]
     fn test_block_region_mem_region() {
-        let alloc_size = 32;
-        let ptr = unsafe { libc::malloc(alloc_size) };
+        let alloc_size = 64;
+        let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
         let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
         let mem = region.mem_region().unwrap();
         assert!(mem.as_ptr() > region.as_ptr().cast::<c_void>());
         let region2 = unsafe { BlockRegionPtr::from_mem_region(mem) };
         assert_eq!(region, region2);
+        unsafe { libc::free(ptr) };
+    }
+
+    #[test]
+    fn test_block_region_size() {
+        let alloc_size = 64;
+        let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
+        let mut region = unsafe { BlockRegionPtr::new(ptr, alloc_size) };
+        assert_eq!(region.size(), 64);
         unsafe { libc::free(ptr) };
     }
 }

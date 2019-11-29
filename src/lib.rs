@@ -76,7 +76,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         block.verify(true, true);
         block
     };
-    let old_block_size = old_block.as_ref().size;
+    let old_block_size = old_block.size();
     let size = util::align_scalar(size);
 
     let _lock = MUTEX.lock();
@@ -120,7 +120,6 @@ pub extern "C" fn free(ptr: *mut c_void) {
             return;
         }
         // Add freed block back to heap structure
-        debug_assert!(block.as_ref().size > 0);
         heap::insert(block);
     }
 }

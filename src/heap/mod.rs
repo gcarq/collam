@@ -15,7 +15,7 @@ static mut HEAP: IntrusiveList = IntrusiveList::new();
 
 /// Inserts a block to the heap structure.
 /// The block is returned to the OS if blocks end is equivalent to program break.
-pub unsafe fn insert(block: BlockRegionPtr) {
+pub unsafe fn insert(mut block: BlockRegionPtr) {
     #[cfg(feature = "debug")]
     HEAP.debug();
     #[cfg(feature = "stats")]
@@ -28,7 +28,7 @@ pub unsafe fn insert(block: BlockRegionPtr) {
     if let Some(brk) = util::get_program_break() {
         if ptr.as_ptr() == brk.as_ptr() {
             // TODO: make sure value doesn't overflow
-            let offset = -((BLOCK_REGION_META_SIZE + block.as_ref().size) as isize);
+            let offset = -((BLOCK_REGION_META_SIZE + block.size()) as isize);
             dprintln!(
                 "[insert]: freeing {} bytes from process (break={:?})",
                 offset,
@@ -39,6 +39,8 @@ pub unsafe fn insert(block: BlockRegionPtr) {
         }
     }
 
+    block.as_mut().prev = None;
+    block.as_mut().next = None;
     dprintln!("[insert]: {} at {:p}", block.as_ref(), block);
     if HEAP.insert(block).is_err() {
         eprintln!("double free detected for ptr {:?}", block.mem_region());
@@ -78,8 +80,8 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
         block
     );
     debug_assert!(
-        block.as_ref().size >= size,
-        "requested={}, got={}",
+        block.size() >= size,
+        "requested_size={}, got_block={}",
         size,
         block.as_ref()
     );
@@ -98,6 +100,7 @@ pub fn split_insert(block: &mut BlockRegionPtr, size: usize) {
 /// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
 fn request_block(size: usize) -> Option<BlockRegionPtr> {
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+    // TODO: fix meta size handling
     let alloc_size = util::align_val(BLOCK_REGION_META_SIZE + size, page_size);
     let ptr = util::sbrk(alloc_size as isize)?;
     return unsafe { Some(BlockRegionPtr::new(ptr.as_ptr(), alloc_size)) };

@@ -19,4 +19,4 @@ cargo build --features debug --release
 gcc mem.c -o ${TMP_DIR}/mem
 
 # Start test executable
-time LD_PRELOAD=target/${CHANNEL}/libdmalloc.so "${EXECUTABLE}"
+time LD_PRELOAD="$(pwd)/target/${CHANNEL}/libdmalloc.so" "${EXECUTABLE}"
