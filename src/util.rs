@@ -61,7 +61,6 @@ pub const fn align_scalar_unchecked(val: usize) -> usize {
     align_val_unchecked(val, align_of::<libc::max_align_t>())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

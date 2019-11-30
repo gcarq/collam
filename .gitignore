@@ -5,4 +5,3 @@ Cargo.lock
 .idea
 perf.data*
 kwrite*.txt
-tarpaulin-report.html
