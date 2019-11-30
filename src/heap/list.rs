@@ -196,7 +196,7 @@ impl IntrusiveList {
         intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_META_SIZE);
 
         dprintln!("      -> {} at {:p}", block.as_ref(), block);
-        return Some(block);
+        Some(block)
     }
 
     /// Takes a `BlockPtr` and tries to merge it with the prev block.
@@ -212,7 +212,7 @@ impl IntrusiveList {
     #[inline]
     unsafe fn maybe_merge_adjacent(block: BlockPtr) -> BlockPtr {
         let block = IntrusiveList::maybe_merge_prev(block).unwrap_or(block);
-        return IntrusiveList::maybe_merge_next(block).unwrap_or(block);
+        IntrusiveList::maybe_merge_next(block).unwrap_or(block)
     }
 
     /// Returns first `BlockPtr` that has a higher memory address than the given `BlockPtr`
@@ -233,7 +233,7 @@ impl IntrusiveList {
             }
             ptr = block.as_ref().next;
         }
-        return Ok(None);
+        Ok(None)
     }
 
     /// Removes the given `BlockPtr` from list and returns it.
@@ -263,7 +263,7 @@ impl IntrusiveList {
         // Clear links in current element
         elem.as_mut().next = None;
         elem.as_mut().prev = None;
-        return elem;
+        elem
     }
 }
 

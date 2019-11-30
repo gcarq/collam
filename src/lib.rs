@@ -51,7 +51,7 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     };
     // Initialize memory region with 0.
     unsafe { intrinsics::volatile_set_memory(ptr, 0, total_size) }
-    return ptr;
+    ptr
 }
 
 #[cfg(not(test))]
@@ -72,7 +72,12 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     }
 
     let mut old_block = unsafe {
-        let block = BlockPtr::from_mem_region(Unique::new_unchecked(p));
+        // Its safe to use Unique_unchecked since we already checked for null pointers.
+        let block = match BlockPtr::from_mem_region(Unique::new_unchecked(p)) {
+            Some(b) => b,
+            None => return null_mut(),
+        };
+
         block.verify(true);
         block
     };
@@ -105,7 +110,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         // Add old block back to heap structure.
         heap::insert(old_block)
     }
-    return new_ptr;
+    new_ptr
 }
 
 #[cfg(not(test))]
@@ -117,7 +122,11 @@ pub extern "C" fn free(ptr: *mut c_void) {
 
     let _lock = MUTEX.lock();
     unsafe {
-        let block = BlockPtr::from_mem_region(Unique::new_unchecked(ptr));
+        // Its safe to use Unique_unchecked since we already checked for null pointers.
+        let block = match BlockPtr::from_mem_region(Unique::new_unchecked(ptr)) {
+            Some(b) => b,
+            None => return,
+        };
         if !block.verify(false) {
             eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
             return;
@@ -135,7 +144,11 @@ pub extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
     }
 
     let _lock = MUTEX.lock();
-    let block = unsafe { BlockPtr::from_mem_region(Unique::new_unchecked(ptr)) };
+    // Its safe to use Unique_unchecked since we already checked for null pointers.
+    let block = match BlockPtr::from_mem_region(unsafe { Unique::new_unchecked(ptr) }) {
+        Some(b) => b,
+        None => return 0,
+    };
     if !block.verify(false) {
         eprintln!(
             "malloc_usable_size(): Unable to verify {} at {:p}",
@@ -144,8 +157,7 @@ pub extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
         );
         return 0;
     }
-
-    return block.size();
+    block.size()
 }
 
 // TODO: implement me

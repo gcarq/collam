@@ -35,30 +35,29 @@ impl BlockPtr {
                 magic: BLOCK_MAGIC_FREE,
             };
         }
-        return BlockPtr(ptr);
+        BlockPtr(ptr)
     }
 
     /// Returns an existing `BlockPtr` instance from the given memory region raw pointer
-    /// TODO: is unsafe required?
     #[inline]
-    pub unsafe fn from_mem_region(ptr: Unique<c_void>) -> Self {
+    pub fn from_mem_region(ptr: Unique<c_void>) -> Option<Self> {
         let offset = BLOCK_META_SIZE as isize;
-        BlockPtr(Unique::new_unchecked(
-            ptr.as_ptr().offset(-offset).cast::<Block>(),
-        ))
+        Some(BlockPtr(Unique::new(unsafe {
+            ptr.as_ptr().offset(-offset).cast::<Block>()
+        })?))
     }
 
     /// Returns a pointer to the assigned memory region for the given block
     #[inline]
     pub fn mem_region(&self) -> Unique<c_void> {
         debug_assert!(self.verify(false));
-        return unsafe {
+        unsafe {
             Unique::new_unchecked(
                 self.as_ptr()
                     .cast::<c_void>()
                     .offset(BLOCK_META_SIZE as isize),
             )
-        };
+        }
     }
 
     /// Acquires underlying `*mut Block`.
@@ -74,23 +73,22 @@ impl BlockPtr {
     }
 
     /// Returns a pointer where the next `Block` would start.
-    /// TODO: resolve new_unchecked
     #[inline]
     pub fn next_potential_block(&self) -> Unique<c_void> {
         let offset = self.block_size() as isize;
-        return unsafe { Unique::new_unchecked(self.cast::<c_void>().as_ptr().offset(offset)) };
+        unsafe { Unique::new_unchecked(self.cast::<c_void>().as_ptr().offset(offset)) }
     }
 
     /// Returns the allocatable size available for the user
     #[inline(always)]
     pub fn size(&self) -> usize {
-        return self.as_ref().size;
+        self.as_ref().size
     }
 
     /// Returns the raw size in memory for this block.
     #[inline(always)]
     pub fn block_size(&self) -> usize {
-        return BLOCK_META_SIZE + self.size();
+        BLOCK_META_SIZE + self.size()
     }
 
     /// Shrinks the block in-place to have the exact memory size as specified (excluding metadata).
@@ -124,7 +122,7 @@ impl BlockPtr {
             new_block.as_ptr() as usize - (self.as_ptr() as usize + self.block_size()),
             0
         );
-        return Some(new_block);
+        Some(new_block)
     }
 
     /// Verifies block to detect memory corruption.
@@ -142,7 +140,7 @@ impl BlockPtr {
                 BLOCK_MAGIC_FREE
             );
         }
-        return false;
+        false
     }
 }
 
@@ -313,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn test_block_mem_region() {
+    fn test_block_mem_region_ok() {
         let alloc_size = 64;
         let ptr = unsafe {
             Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
@@ -322,8 +320,15 @@ mod tests {
         let block = BlockPtr::new(ptr, alloc_size);
         let mem = block.mem_region();
         assert!(mem.as_ptr() > block.as_ptr().cast::<c_void>());
-        let block2 = unsafe { BlockPtr::from_mem_region(mem) };
+        let block2 = BlockPtr::from_mem_region(mem).expect("unable to create from mem region");
         assert_eq!(block, block2);
         unsafe { libc::free(ptr.as_ptr()) };
+    }
+
+    #[test]
+    fn test_block_mem_region_err() {
+        let region =
+            unsafe { Unique::new_unchecked(mem::align_of::<libc::max_align_t>() as *mut c_void) };
+        assert_eq!(BlockPtr::from_mem_region(region), None);
     }
 }

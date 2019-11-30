@@ -52,7 +52,7 @@ pub unsafe fn insert(mut block: BlockPtr) {
 pub unsafe fn pop(size: usize) -> Option<BlockPtr> {
     let block = HEAP.pop(size)?;
     dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
-    return Some(block);
+    Some(block)
 }
 
 /// Find a usable memory region for the given size either by
@@ -88,7 +88,7 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
         size,
         block.as_ref()
     );
-    return Some(block.mem_region());
+    Some(block.mem_region())
 }
 
 /// Shrinks the given `BlockPtr` in-place to have
