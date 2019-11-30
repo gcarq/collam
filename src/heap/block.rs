@@ -23,25 +23,24 @@ pub struct BlockPtr(Unique<Block>);
 
 impl BlockPtr {
     /// Creates a `Block` instance at the given raw pointer for the specified size.
-    /// TODO use Unique<c_void> to avoid null pointer issues
     #[inline]
-    pub fn new(ptr: *mut c_void, size: usize) -> Self {
+    pub fn new(ptr: Unique<c_void>, size: usize) -> Self {
         debug_assert_eq!(size, util::align_scalar(size).unwrap());
+        let ptr = ptr.cast::<Block>();
         unsafe {
-            let ptr = ptr.cast::<Block>();
-            *ptr = Block {
+            *ptr.as_ptr() = Block {
                 size,
                 next: None,
                 prev: None,
                 magic: BLOCK_MAGIC_FREE,
             };
-            return BlockPtr(Unique::new_unchecked(ptr));
         }
+        return BlockPtr(ptr);
     }
 
     /// Returns an existing `BlockPtr` instance from the given memory region raw pointer
     /// TODO: is unsafe required?
-    #[inline(always)]
+    #[inline]
     pub unsafe fn from_mem_region(ptr: Unique<c_void>) -> Self {
         let offset = BLOCK_META_SIZE as isize;
         BlockPtr(Unique::new_unchecked(
@@ -50,7 +49,7 @@ impl BlockPtr {
     }
 
     /// Returns a pointer to the assigned memory region for the given block
-    #[inline(always)]
+    #[inline]
     pub fn mem_region(&self) -> Unique<c_void> {
         debug_assert!(self.verify(false));
         return unsafe {
@@ -111,7 +110,8 @@ impl BlockPtr {
         self.as_mut().size = size;
 
         // Create block with remaining size
-        let new_block_ptr = unsafe { self.mem_region().as_ptr().offset(size as isize) };
+        let new_block_ptr =
+            unsafe { Unique::new_unchecked(self.mem_region().as_ptr().offset(size as isize)) };
         let new_block = BlockPtr::new(new_block_ptr, rem_block_size);
 
         dprintln!("      -> {} at {:p}", self.as_ref(), self);
@@ -224,19 +224,25 @@ mod tests {
     #[test]
     fn test_block_new() {
         let alloc_size = 64;
-        let ptr = unsafe { libc::malloc(BLOCK_META_SIZE + alloc_size) };
+        let ptr = unsafe {
+            Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
+                .expect("unable to allocate memory")
+        };
         assert_block(BlockPtr::new(ptr, alloc_size), alloc_size);
-        unsafe { libc::free(ptr) };
+        unsafe { libc::free(ptr.as_ptr()) };
     }
 
     #[test]
     fn test_block_shrink_with_remaining() {
         let block1_size = 4096;
-        let ptr = unsafe { libc::malloc(BLOCK_META_SIZE + block1_size) };
+        let ptr = unsafe {
+            Unique::new(libc::malloc(BLOCK_META_SIZE + block1_size))
+                .expect("unable to allocate memory")
+        };
         let mut block1 = BlockPtr::new(ptr, block1_size);
         assert_block(block1, block1_size);
         let total_size = block1.block_size();
-        assert_eq!(ptr, block1.as_ptr().cast::<c_void>());
+        assert_eq!(ptr.as_ptr(), block1.as_ptr().cast::<c_void>());
 
         // Shrink block1 to 256 bytes
         let mut block2 = block1.shrink(256).expect("split block failed");
@@ -258,54 +264,66 @@ mod tests {
             block3,
             total_size - block1.block_size() - block2.block_size() - BLOCK_META_SIZE,
         );
-        unsafe { libc::free(ptr) };
+        unsafe { libc::free(ptr.as_ptr()) };
     }
 
     #[test]
     fn test_block_shrink_no_remaining() {
         let alloc_size = 256;
-        let ptr = unsafe { libc::malloc(BLOCK_META_SIZE + alloc_size) };
+        let ptr = unsafe {
+            Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
+                .expect("unable to allocate memory")
+        };
         let mut block = BlockPtr::new(ptr, alloc_size);
         let remaining = block.shrink(240);
 
         // Assert correctness of initial block
-        assert_eq!(ptr, block.as_ptr().cast::<c_void>());
+        assert_eq!(ptr.as_ptr(), block.as_ptr().cast::<c_void>());
         assert_block(block, 256);
 
         // There should be no remaining block
         // since 240 will be aligned to 256 and no space is left.
         assert!(remaining.is_none());
-        unsafe { libc::free(ptr) };
+        unsafe { libc::free(ptr.as_ptr()) };
     }
 
     #[test]
     fn test_block_verify_ok() {
         let alloc_size = 256;
-        let ptr = unsafe { libc::malloc(BLOCK_META_SIZE + alloc_size) };
+        let ptr = unsafe {
+            Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
+                .expect("unable to allocate memory")
+        };
         let block = BlockPtr::new(ptr, alloc_size);
         assert_eq!(block.verify(false), true);
-        unsafe { libc::free(ptr) };
+        unsafe { libc::free(ptr.as_ptr()) };
     }
 
     #[test]
     fn test_block_verify_invalid() {
         let alloc_size = 256;
-        let ptr = unsafe { libc::malloc(BLOCK_META_SIZE + alloc_size) };
+        let ptr = unsafe {
+            Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
+                .expect("unable to allocate memory")
+        };
         let mut block = BlockPtr::new(ptr, alloc_size);
         block.as_mut().magic = 0x1234;
         assert_eq!(block.verify(false), false);
-        unsafe { libc::free(ptr) };
+        unsafe { libc::free(ptr.as_ptr()) };
     }
 
     #[test]
     fn test_block_mem_region() {
         let alloc_size = 64;
-        let ptr = unsafe { libc::malloc(BLOCK_META_SIZE + alloc_size) };
+        let ptr = unsafe {
+            Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
+                .expect("unable to allocate memory")
+        };
         let block = BlockPtr::new(ptr, alloc_size);
         let mem = block.mem_region();
         assert!(mem.as_ptr() > block.as_ptr().cast::<c_void>());
         let block2 = unsafe { BlockPtr::from_mem_region(mem) };
         assert_eq!(block, block2);
-        unsafe { libc::free(ptr) };
+        unsafe { libc::free(ptr.as_ptr()) };
     }
 }

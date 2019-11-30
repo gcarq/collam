@@ -64,7 +64,6 @@ pub const fn align_scalar_unchecked(val: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
     use super::*;
 
     #[test]

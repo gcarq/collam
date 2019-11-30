@@ -48,7 +48,7 @@ pub unsafe fn insert(mut block: BlockPtr) {
 }
 
 /// Removes and returns a suitable empty `BlockPtr` from the heap structure.
-#[inline(always)]
+#[inline]
 pub unsafe fn pop(size: usize) -> Option<BlockPtr> {
     let block = HEAP.pop(size)?;
     dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
@@ -106,8 +106,10 @@ pub fn shrink_insert_rem(block: &mut BlockPtr, size: usize) {
 fn request_block(min_size: usize) -> Option<BlockPtr> {
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
     let size = util::align_val(BLOCK_META_SIZE + min_size, page_size).ok()?;
-    let ptr = util::sbrk(size as isize)?;
-    Some(BlockPtr::new(ptr.as_ptr(), size - BLOCK_META_SIZE))
+    Some(BlockPtr::new(
+        util::sbrk(size as isize)?,
+        size - BLOCK_META_SIZE,
+    ))
 }
 
 #[cfg(test)]
