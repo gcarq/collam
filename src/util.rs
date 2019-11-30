@@ -5,12 +5,6 @@ use core::ptr::Unique;
 #[cfg(feature = "stats")]
 use crate::stats;
 
-/// Returns a pointer to the current program break
-#[inline(always)]
-pub fn get_program_break() -> Option<Unique<c_void>> {
-    sbrk(0)
-}
-
 #[inline]
 pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
     let ptr = unsafe { libc::sbrk(size) };
@@ -58,5 +52,10 @@ mod tests {
         for _ in 0..100 {
             assert_eq!(align_scalar(rng.gen()) % align, 0);
         }
+    }
+
+    #[test]
+    fn test_sbrk() {
+        assert!(sbrk(0).is_some())
     }
 }

@@ -19,4 +19,4 @@ cargo build --release
 gcc test.c -o ${TMP_DIR}/test
 
 # Start test executable
-perf record -g bash -c "LD_PRELOAD=\"$(pwd)target/${CHANNEL}/libdmalloc.so\" ${EXECUTABLE}"
+perf record -g bash -c "LD_PRELOAD=\"$(pwd)/target/${CHANNEL}/libdmalloc.so\" ${EXECUTABLE}"

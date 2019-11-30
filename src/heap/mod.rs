@@ -25,16 +25,16 @@ pub unsafe fn insert(mut block: BlockRegionPtr) {
     }
 
     let ptr = block.next_potential_block();
-    if let Some(brk) = util::get_program_break() {
+    if let Some(brk) = util::sbrk(0) {
         if ptr.as_ptr() == brk.as_ptr() {
             // TODO: make sure value doesn't overflow
-            let offset = -((BLOCK_REGION_META_SIZE + block.size()) as isize);
+            let offset = block.raw_size() as isize;
             dprintln!(
                 "[insert]: freeing {} bytes from process (break={:?})",
                 offset,
                 ptr
             );
-            util::sbrk(offset);
+            util::sbrk(-offset);
             return;
         }
     }
@@ -100,8 +100,30 @@ pub fn split_insert(block: &mut BlockRegionPtr, size: usize) {
 /// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
 fn request_block(size: usize) -> Option<BlockRegionPtr> {
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-    // TODO: fix meta size handling
     let alloc_size = util::align_val(BLOCK_REGION_META_SIZE + size, page_size);
     let ptr = util::sbrk(alloc_size as isize)?;
-    return unsafe { Some(BlockRegionPtr::new(ptr.as_ptr(), alloc_size)) };
+    return Some(BlockRegionPtr::new(
+        ptr.as_ptr(),
+        alloc_size - BLOCK_REGION_META_SIZE,
+    ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util;
+
+    #[test]
+    fn test_request_block() {
+        let region = request_block(256).unwrap();
+        let brk = region.next_potential_block().as_ptr();
+        assert_eq!(brk, util::sbrk(0).unwrap().as_ptr());
+    }
+
+    #[test]
+    fn test_request_block_split() {
+        let rem_region = request_block(256).unwrap().split(128).unwrap();
+        let brk = rem_region.next_potential_block().as_ptr();
+        assert_eq!(brk, util::sbrk(0).unwrap().as_ptr());
+    }
 }
