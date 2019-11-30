@@ -77,7 +77,10 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         block
     };
     let old_block_size = old_block.size();
-    let size = util::align_scalar(size);
+    let size = match util::align_scalar(size) {
+        Ok(size) => size,
+        Err(_) => return null_mut(),
+    };
 
     let _lock = MUTEX.lock();
     // Shrink allocated block if size is smaller.

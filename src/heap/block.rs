@@ -5,10 +5,10 @@ use libc_print::libc_eprintln;
 use crate::util;
 
 /// The required block size to store the bare minimum of metadata (size + magic value).
-pub const BLOCK_META_SIZE: usize = util::align_scalar(mem::align_of::<usize>() * 2);
+pub const BLOCK_META_SIZE: usize = util::align_scalar_unchecked(mem::align_of::<usize>() * 2);
 /// The minimal size of a block if not allocated by the user.
 /// This is `BLOCK_META_SIZE` including space to save intrusive data structures.
-pub const BLOCK_MIN_SIZE: usize = util::align_scalar(
+pub const BLOCK_MIN_SIZE: usize = util::align_scalar_unchecked(
     BLOCK_META_SIZE
         + 2 * mem::align_of::<Option<BlockPtr>>()
         + mem::align_of::<libc::max_align_t>(),
@@ -26,7 +26,7 @@ impl BlockPtr {
     /// TODO use Unique<c_void> to avoid null pointer issues
     #[inline]
     pub fn new(ptr: *mut c_void, size: usize) -> Self {
-        debug_assert_eq!(size, util::align_scalar(size));
+        debug_assert_eq!(size, util::align_scalar(size).unwrap());
         unsafe {
             let ptr = ptr.cast::<Block>();
             *ptr = Block {
@@ -98,7 +98,7 @@ impl BlockPtr {
     /// Returns a newly created `BlockPtr` with the remaining size or `None` if split is not possible.
     pub fn shrink(&mut self, size: usize) -> Option<BlockPtr> {
         dprintln!("[split]: {} at {:p}", self.as_ref(), self);
-        debug_assert_eq!(size, util::align_scalar(size));
+        debug_assert_eq!(size, util::align_scalar_unchecked(size));
         // Check if its possible to split the block with the requested size
         let rem_block_size = self.size().checked_sub(size + BLOCK_META_SIZE)?;
 

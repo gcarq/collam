@@ -64,7 +64,7 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
     }
 
     dprintln!("[libdmalloc.so]: alloc(size={})", size);
-    let size = util::align_scalar(size);
+    let size = util::align_scalar(size).ok()?;
     // Check if there is already a suitable block allocated
     let mut block = if let Some(block) = unsafe { pop(size) } {
         block
@@ -105,9 +105,9 @@ pub fn shrink_insert_rem(block: &mut BlockPtr, size: usize) {
 /// and returns a `BlockPtr` to the newly created block or `None` if not possible.
 fn request_block(min_size: usize) -> Option<BlockPtr> {
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-    let alloc_size = util::align_val_unchecked(BLOCK_META_SIZE + min_size, page_size);
-    let ptr = util::sbrk(alloc_size as isize)?;
-    return Some(BlockPtr::new(ptr.as_ptr(), alloc_size - BLOCK_META_SIZE));
+    let size = util::align_val(BLOCK_META_SIZE + min_size, page_size).ok()?;
+    let ptr = util::sbrk(size as isize)?;
+    Some(BlockPtr::new(ptr.as_ptr(), size - BLOCK_META_SIZE))
 }
 
 #[cfg(test)]

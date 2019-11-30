@@ -19,21 +19,45 @@ pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
 }
 
 /// Aligns passed value to align and returns it.
-#[inline(always)]
-pub const fn align_val_unchecked(val: usize, align: usize) -> usize {
-    /*
-    FIXME: can overflow if size is slightly less than usize::MAX
-    if size > usize::MAX - (align - 1) {
-            return Err(LayoutErr { private: () });
+/// Rounded up size is:
+/// size_rounded_up = (size + align - 1) & !(align - 1);
+///
+/// We know from above that align != 0. If adding align
+/// does not overflow, then rounding up will be fine.
+///
+/// Conversely, &-masking with !(align - 1) will subtract off
+/// only low-order-bits. Thus if overflow occurs with the sum,
+/// the &-mask cannot subtract enough to undo that overflow.
+///
+/// Above implies that checking for summation overflow is both
+/// necessary and sufficient.
+#[inline]
+pub fn align_val(val: usize, align: usize) -> Result<usize, ()> {
+    if val > usize::max_value() - align {
+        return Err(());
     }
-    */
+    Ok(align_val_unchecked(val, align))
+}
+
+/// Aligns passed value to align and returns it.
+/// NOTE: not checked for overflows!
+#[inline]
+pub const fn align_val_unchecked(val: usize, align: usize) -> usize {
     (val + align - 1) & !(align - 1)
 }
 
 /// Aligns passed value to be at lest the size of the
 /// largest scalar type `libc::max_align_t` and returns it.
-#[inline(always)]
-pub const fn align_scalar(val: usize) -> usize {
+#[inline]
+pub fn align_scalar(val: usize) -> Result<usize, ()> {
+    align_val(val, align_of::<libc::max_align_t>())
+}
+
+/// Aligns passed value to be at lest the size of the
+/// largest scalar type `libc::max_align_t` and returns it.
+/// NOTE: not checked for overflows!
+#[inline]
+pub const fn align_scalar_unchecked(val: usize) -> usize {
     align_val_unchecked(val, align_of::<libc::max_align_t>())
 }
 
@@ -44,25 +68,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_align_val() {
-        let mut rng = rand::thread_rng();
-        for _ in 0..100 {
-            let align = 4096;
-            assert_eq!(align_val_unchecked(rng.gen(), align) % align, 0);
+    fn test_align_val_ok() {
+        let align = 4096;
+        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
+            assert_eq!(align_val(*val, align).expect("unable to align") % align, 0);
         }
     }
 
     #[test]
-    fn test_align_scalar() {
-        let mut rng = rand::thread_rng();
+    fn test_align_val_err() {
+        assert_eq!(align_val(usize::max_value() - 12, 4096), Err(()));
+    }
+
+    #[test]
+    fn test_align_val_unchecked() {
+        let align = 4096;
+        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
+            assert_eq!(align_val_unchecked(*val, align) % align, 0);
+        }
+    }
+
+    #[test]
+    fn test_align_scalar_ok() {
         let align = align_of::<libc::max_align_t>();
-        for _ in 0..100 {
-            assert_eq!(align_scalar(rng.gen()) % align, 0);
+        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
+            assert_eq!(align_scalar(*val).expect("unable to align") % align, 0);
         }
     }
 
     #[test]
-    fn test_sbrk() {
+    fn test_align_scalar_err() {
+        assert_eq!(align_scalar(usize::max_value() - 15), Err(()));
+    }
+
+    #[test]
+    fn test_align_scalar_unchecked() {
+        let align = align_of::<libc::max_align_t>();
+        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
+            assert_eq!(align_scalar_unchecked(*val) % align, 0);
+        }
+    }
+
+    #[test]
+    fn test_sbrk_ok() {
         assert!(sbrk(0).is_some())
+    }
+
+    #[test]
+    fn test_sbrk_err() {
+        assert!(sbrk(isize::min_value()).is_none());
     }
 }
