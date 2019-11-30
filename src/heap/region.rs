@@ -47,12 +47,11 @@ impl BlockRegionPtr {
     }
 
     /// Returns a pointer to the assigned memory region for the given block
-    /// TODO: use Unique::new_unchecked?
     #[inline(always)]
-    pub fn mem_region(&self) -> Option<Unique<c_void>> {
+    pub fn mem_region(&self) -> Unique<c_void> {
         debug_assert!(self.verify(false));
         return unsafe {
-            Unique::new(
+            Unique::new_unchecked(
                 self.as_ptr()
                     .cast::<c_void>()
                     .offset(BLOCK_REGION_META_SIZE as isize),
@@ -94,7 +93,7 @@ impl BlockRegionPtr {
 
     /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
     /// Returns a newly created block with the remaining size or None if split is not possible.
-    pub fn split(&mut self, size: usize) -> Option<BlockRegionPtr> {
+    pub fn shrink(&mut self, size: usize) -> Option<BlockRegionPtr> {
         dprintln!("[split]: {} at {:p}", self.as_ref(), self);
         debug_assert_eq!(size, util::align_scalar(size));
         // Check if its possible to split the block with the requested size
@@ -109,8 +108,7 @@ impl BlockRegionPtr {
         self.as_mut().size = size;
 
         // Create block with remaining size
-        // TODO: is mem_region a good choice here?
-        let new_block_ptr = unsafe { self.mem_region()?.as_ptr().offset(size as isize) };
+        let new_block_ptr = unsafe { self.mem_region().as_ptr().offset(size as isize) };
         let new_block = BlockRegionPtr::new(new_block_ptr, rem_block_size);
 
         dprintln!("      -> {} at {:p}", self.as_ref(), self);
@@ -207,14 +205,27 @@ mod tests {
     use crate::heap::alloc;
 
     fn assert_block(block: BlockRegionPtr, size: usize) {
-        assert_eq!(block.size(), size);
-        assert!(block.verify(false));
-        assert!(block.as_ref().next.is_none());
-        assert!(block.as_ref().prev.is_none());
+        assert_eq!(block.size(), size, "block size doesn't match");
+        assert_eq!(
+            block.raw_size(),
+            BLOCK_REGION_META_SIZE + size,
+            "block raw size doesn't match"
+        );
+        assert!(block.verify(false), "unable to verify block metadata");
+        assert!(block.as_ref().next.is_none(), "next is not None");
+        assert!(block.as_ref().prev.is_none(), "prev is not None");
     }
 
     #[test]
-    fn test_block_region_split_ok() {
+    fn test_block_region_new() {
+        let alloc_size = 64;
+        let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
+        assert_block(BlockRegionPtr::new(ptr, alloc_size), alloc_size);
+        unsafe { libc::free(ptr) };
+    }
+
+    #[test]
+    fn test_block_region_shrink_with_remaining() {
         let block1_size = 4096;
         let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + block1_size) };
         let mut block1 = BlockRegionPtr::new(ptr, block1_size);
@@ -223,7 +234,7 @@ mod tests {
         assert_eq!(ptr, block1.as_ptr().cast::<c_void>());
 
         // Shrink block1 to 256 bytes
-        let mut block2 = block1.split(256).unwrap();
+        let mut block2 = block1.shrink(256).expect("split block failed");
         assert_block(block1, 256);
         assert_eq!(
             block1.next_potential_block().as_ptr(),
@@ -235,7 +246,7 @@ mod tests {
         );
 
         // Shrink block2 to 256 bytes
-        let block3 = block2.split(256).unwrap();
+        let block3 = block2.shrink(256).expect("split block failed");
         assert_block(block2, 256);
         assert_eq!(
             block2.next_potential_block().as_ptr(),
@@ -249,11 +260,11 @@ mod tests {
     }
 
     #[test]
-    fn test_block_region_split_too_small() {
+    fn test_block_region_shrink_no_remaining() {
         let alloc_size = 256;
         let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
         let mut block = BlockRegionPtr::new(ptr, alloc_size);
-        let remaining = block.split(240);
+        let remaining = block.shrink(240);
 
         // Assert correctness of initial block
         assert_eq!(ptr, block.as_ptr().cast::<c_void>());
@@ -289,19 +300,10 @@ mod tests {
         let alloc_size = 64;
         let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
         let block = BlockRegionPtr::new(ptr, alloc_size);
-        let mem = block.mem_region().unwrap();
+        let mem = block.mem_region();
         assert!(mem.as_ptr() > block.as_ptr().cast::<c_void>());
         let block2 = unsafe { BlockRegionPtr::from_mem_region(mem) };
         assert_eq!(block, block2);
-        unsafe { libc::free(ptr) };
-    }
-
-    #[test]
-    fn test_block_region_size() {
-        let alloc_size = 64;
-        let ptr = unsafe { libc::malloc(BLOCK_REGION_META_SIZE + alloc_size) };
-        let block = BlockRegionPtr::new(ptr, alloc_size);
-        assert_block(block, 64);
         unsafe { libc::free(ptr) };
     }
 }

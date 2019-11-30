@@ -85,14 +85,14 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
         size,
         block.as_ref()
     );
-    return block.mem_region();
+    return Some(block.mem_region());
 }
 
 /// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
 /// The remaining block (if any) is added to the heap.
 #[inline]
 pub fn split_insert(block: &mut BlockRegionPtr, size: usize) {
-    if let Some(rem_block) = block.split(size) {
+    if let Some(rem_block) = block.shrink(size) {
         unsafe { insert(rem_block) };
     }
 }
@@ -100,7 +100,7 @@ pub fn split_insert(block: &mut BlockRegionPtr, size: usize) {
 /// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
 fn request_block(size: usize) -> Option<BlockRegionPtr> {
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-    let alloc_size = util::align_val(BLOCK_REGION_META_SIZE + size, page_size);
+    let alloc_size = util::align_val_unchecked(BLOCK_REGION_META_SIZE + size, page_size);
     let ptr = util::sbrk(alloc_size as isize)?;
     return Some(BlockRegionPtr::new(
         ptr.as_ptr(),
@@ -115,15 +115,18 @@ mod tests {
 
     #[test]
     fn test_request_block() {
-        let region = request_block(256).unwrap();
+        let region = request_block(256).expect("unable to request block");
         let brk = region.next_potential_block().as_ptr();
-        assert_eq!(brk, util::sbrk(0).unwrap().as_ptr());
+        assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
     }
 
     #[test]
     fn test_request_block_split() {
-        let rem_region = request_block(256).unwrap().split(128).unwrap();
+        let rem_region = request_block(256)
+            .expect("unable to request block")
+            .shrink(128)
+            .expect("unable to split block");
         let brk = rem_region.next_potential_block().as_ptr();
-        assert_eq!(brk, util::sbrk(0).unwrap().as_ptr());
+        assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
     }
 }

@@ -20,14 +20,20 @@ pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
 
 /// Aligns passed value to libc::max_align_t
 #[inline(always)]
-pub const fn align_val(val: usize, align: usize) -> usize {
+pub const fn align_val_unchecked(val: usize, align: usize) -> usize {
+    /*
+    FIXME: can overflow if size is slightly less than usize::MAX
+    if size > usize::MAX - (align - 1) {
+            return Err(LayoutErr { private: () });
+    }
+    */
     (val + align - 1) & !(align - 1)
 }
 
 /// Aligns val to be at lest the size of the largest scalar type (libc::max_align_t)
 #[inline(always)]
 pub const fn align_scalar(val: usize) -> usize {
-    align_val(val, align_of::<libc::max_align_t>())
+    align_val_unchecked(val, align_of::<libc::max_align_t>())
 }
 
 
@@ -41,7 +47,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         for _ in 0..100 {
             let align = 4096;
-            assert_eq!(align_val(rng.gen(), align) % align, 0);
+            assert_eq!(align_val_unchecked(rng.gen(), align) % align, 0);
         }
     }
 
