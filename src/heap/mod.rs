@@ -2,20 +2,20 @@ use core::{ffi::c_void, ptr::Unique};
 
 use libc_print::libc_eprintln;
 
+use crate::heap::block::{BlockPtr, BLOCK_META_SIZE};
 use crate::heap::list::IntrusiveList;
-use crate::heap::region::{BlockRegionPtr, BLOCK_REGION_META_SIZE};
 #[cfg(feature = "stats")]
 use crate::stats;
 use crate::util;
 
+pub mod block;
 mod list;
-pub mod region;
 
 static mut HEAP: IntrusiveList = IntrusiveList::new();
 
-/// Inserts a block to the heap structure.
-/// The block is returned to the OS if blocks end is equivalent to program break.
-pub unsafe fn insert(mut block: BlockRegionPtr) {
+/// Inserts a `BlockPtr` to the heap structure.
+/// NOTE: The memory is returned to the OS if it is adjacent to program break.
+pub unsafe fn insert(mut block: BlockPtr) {
     #[cfg(feature = "debug")]
     HEAP.debug();
     #[cfg(feature = "stats")]
@@ -28,7 +28,7 @@ pub unsafe fn insert(mut block: BlockRegionPtr) {
     if let Some(brk) = util::sbrk(0) {
         if ptr.as_ptr() == brk.as_ptr() {
             // TODO: make sure value doesn't overflow
-            let offset = block.raw_size() as isize;
+            let offset = block.block_size() as isize;
             dprintln!(
                 "[insert]: freeing {} bytes from process (break={:?})",
                 offset,
@@ -47,14 +47,17 @@ pub unsafe fn insert(mut block: BlockRegionPtr) {
     }
 }
 
-/// Removes and returns a suitable empty block from the heap structure.
+/// Removes and returns a suitable empty `BlockPtr` from the heap structure.
 #[inline(always)]
-pub unsafe fn pop(size: usize) -> Option<BlockRegionPtr> {
+pub unsafe fn pop(size: usize) -> Option<BlockPtr> {
     let block = HEAP.pop(size)?;
     dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
     return Some(block);
 }
 
+/// Find a usable memory region for the given size either by
+/// reusing or requesting memory from the kernel.
+/// Returns a `Unique<c_void>` pointer to the memory region.
 pub fn alloc(size: usize) -> Option<Unique<c_void>> {
     if size == 0 {
         return None;
@@ -72,7 +75,7 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
         dprintln!("[libdmalloc.so]: failed for size: {}\n", size);
         return None;
     };
-    split_insert(&mut block, size);
+    shrink_insert_rem(&mut block, size);
 
     dprintln!(
         "[libdmalloc.so]: returning {} at {:p}\n",
@@ -88,24 +91,23 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
     return Some(block.mem_region());
 }
 
-/// Splits the given block in-place to have the exact memory size as specified (excluding metadata).
-/// The remaining block (if any) is added to the heap.
+/// Shrinks the given `BlockPtr` in-place to have
+/// the exact memory size as specified (excluding metadata).
+/// and adds the remaining block to heap if any.
 #[inline]
-pub fn split_insert(block: &mut BlockRegionPtr, size: usize) {
+pub fn shrink_insert_rem(block: &mut BlockPtr, size: usize) {
     if let Some(rem_block) = block.shrink(size) {
         unsafe { insert(rem_block) };
     }
 }
 
-/// Requests memory from kernel and returns a pointer to the newly created BlockMeta.
-fn request_block(size: usize) -> Option<BlockRegionPtr> {
+/// Requests memory for the specified size from kernel
+/// and returns a `BlockPtr` to the newly created block or `None` if not possible.
+fn request_block(min_size: usize) -> Option<BlockPtr> {
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-    let alloc_size = util::align_val_unchecked(BLOCK_REGION_META_SIZE + size, page_size);
+    let alloc_size = util::align_val_unchecked(BLOCK_META_SIZE + min_size, page_size);
     let ptr = util::sbrk(alloc_size as isize)?;
-    return Some(BlockRegionPtr::new(
-        ptr.as_ptr(),
-        alloc_size - BLOCK_REGION_META_SIZE,
-    ));
+    return Some(BlockPtr::new(ptr.as_ptr(), alloc_size - BLOCK_META_SIZE));
 }
 
 #[cfg(test)]
@@ -115,18 +117,18 @@ mod tests {
 
     #[test]
     fn test_request_block() {
-        let region = request_block(256).expect("unable to request block");
-        let brk = region.next_potential_block().as_ptr();
+        let block = request_block(256).expect("unable to request block");
+        let brk = block.next_potential_block().as_ptr();
         assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
     }
 
     #[test]
     fn test_request_block_split() {
-        let rem_region = request_block(256)
+        let rem_block = request_block(256)
             .expect("unable to request block")
             .shrink(128)
             .expect("unable to split block");
-        let brk = rem_region.next_potential_block().as_ptr();
+        let brk = rem_block.next_potential_block().as_ptr();
         assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
     }
 }

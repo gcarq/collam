@@ -1,22 +1,22 @@
 use core::ffi::c_void;
 use core::ptr::Unique;
 
-use crate::heap::region::BlockRegionPtr;
+use crate::heap::block::BlockPtr;
 use libc_print::libc_eprintln;
 
 static mut HEAP_LOW_ADDR: Option<Unique<c_void>> = None;
 static mut HEAP_HIGH_ADDR: Option<Unique<c_void>> = None;
 
-static mut HEAP_HEAD: Option<BlockRegionPtr> = None;
-static mut HEAP_TAIL: Option<BlockRegionPtr> = None;
+static mut HEAP_HEAD: Option<BlockPtr> = None;
+static mut HEAP_TAIL: Option<BlockPtr> = None;
 
-pub unsafe fn update_ends(head: Option<BlockRegionPtr>, tail: Option<BlockRegionPtr>) {
+pub unsafe fn update_ends(head: Option<BlockPtr>, tail: Option<BlockPtr>) {
     HEAP_HEAD = head;
     HEAP_TAIL = tail;
 }
 
 /// Updates heap information.
-/// Should be called with the current program break.
+/// Should only be called with the current program break.
 pub unsafe fn update_heap_info(ptr: *mut c_void) {
     if HEAP_LOW_ADDR.is_none() {
         HEAP_LOW_ADDR = Unique::new(ptr);

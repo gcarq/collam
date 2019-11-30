@@ -16,7 +16,7 @@ extern crate std;
 use core::ptr::{null_mut, Unique};
 use core::{cmp, ffi::c_void, intrinsics, panic};
 
-use crate::heap::region::BlockRegionPtr;
+use crate::heap::block::BlockPtr;
 use libc_print::libc_eprintln;
 
 mod macros;
@@ -49,7 +49,7 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
         Some(p) => p.as_ptr(),
         None => return null_mut(),
     };
-    // Initialize memory region with 0
+    // Initialize memory region with 0.
     unsafe { intrinsics::volatile_set_memory(ptr, 0, total_size) }
     return ptr;
 }
@@ -58,21 +58,21 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 #[no_mangle]
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
-        // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size
+        // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size.
         let _lock = MUTEX.lock();
         return match heap::alloc(size) {
             Some(p) => p.as_ptr(),
             None => null_mut(),
         };
     } else if size == 0 {
-        // if size is equal to zero, and ptr is not NULL,
-        // then the call is equivalent to free(ptr)
+        // If size is equal to zero, and ptr is not NULL,
+        // then the call is equivalent to free(ptr).
         free(p);
         return null_mut();
     }
 
     let mut old_block = unsafe {
-        let block = BlockRegionPtr::from_mem_region(Unique::new_unchecked(p));
+        let block = BlockPtr::from_mem_region(Unique::new_unchecked(p));
         block.verify(true);
         block
     };
@@ -80,18 +80,18 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     let size = util::align_scalar(size);
 
     let _lock = MUTEX.lock();
-    // shrink allocated block if size is smaller
+    // Shrink allocated block if size is smaller.
     if size < old_block_size {
-        heap::split_insert(&mut old_block, size);
+        heap::shrink_insert_rem(&mut old_block, size);
         return p;
     }
 
-    // just return pointer if size didn't change
+    // Just return pointer if size didn't change.
     if size == old_block_size {
         return p;
     }
 
-    // allocate new region to fit size
+    // Allocate new region to fit size.
     let new_ptr = match heap::alloc(size) {
         Some(p) => p.as_ptr(),
         None => return null_mut(),
@@ -99,7 +99,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     let copy_size = cmp::min(size, old_block_size);
     unsafe {
         intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, p, copy_size);
-        // Add old block back to heap structure
+        // Add old block back to heap structure.
         heap::insert(old_block)
     }
     return new_ptr;
@@ -114,12 +114,12 @@ pub extern "C" fn free(ptr: *mut c_void) {
 
     let _lock = MUTEX.lock();
     unsafe {
-        let block = BlockRegionPtr::from_mem_region(Unique::new_unchecked(ptr));
+        let block = BlockPtr::from_mem_region(Unique::new_unchecked(ptr));
         if !block.verify(false) {
             eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
             return;
         }
-        // Add freed block back to heap structure
+        // Add freed block back to heap structure.
         heap::insert(block);
     }
 }
@@ -132,7 +132,7 @@ pub extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
     }
 
     let _lock = MUTEX.lock();
-    let block = unsafe { BlockRegionPtr::from_mem_region(Unique::new_unchecked(ptr)) };
+    let block = unsafe { BlockPtr::from_mem_region(Unique::new_unchecked(ptr)) };
     if !block.verify(false) {
         eprintln!(
             "malloc_usable_size(): Unable to verify {} at {:p}",

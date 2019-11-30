@@ -18,7 +18,7 @@ pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
     Unique::new(ptr)
 }
 
-/// Aligns passed value to libc::max_align_t
+/// Aligns passed value to align and returns it.
 #[inline(always)]
 pub const fn align_val_unchecked(val: usize, align: usize) -> usize {
     /*
@@ -30,7 +30,8 @@ pub const fn align_val_unchecked(val: usize, align: usize) -> usize {
     (val + align - 1) & !(align - 1)
 }
 
-/// Aligns val to be at lest the size of the largest scalar type (libc::max_align_t)
+/// Aligns passed value to be at lest the size of the
+/// largest scalar type `libc::max_align_t` and returns it.
 #[inline(always)]
 pub const fn align_scalar(val: usize) -> usize {
     align_val_unchecked(val, align_of::<libc::max_align_t>())

@@ -2,12 +2,12 @@ use core::{ffi::c_void, intrinsics};
 
 use libc_print::libc_eprintln;
 
-use crate::heap::region::{BlockRegionPtr, BLOCK_REGION_META_SIZE, BLOCK_REGION_MIN_SIZE};
+use crate::heap::block::{BlockPtr, BLOCK_META_SIZE, BLOCK_MIN_SIZE};
 
 #[repr(C)]
 pub struct IntrusiveList {
-    pub head: Option<BlockRegionPtr>,
-    pub tail: Option<BlockRegionPtr>,
+    pub head: Option<BlockPtr>,
+    pub tail: Option<BlockPtr>,
 }
 
 impl IntrusiveList {
@@ -18,8 +18,9 @@ impl IntrusiveList {
         }
     }
 
-    /// Add a block to the list
-    pub fn insert(&mut self, to_insert: BlockRegionPtr) -> Result<(), ()> {
+    /// Inserts a `BlockPtr` to the existing list and
+    /// returns `Err` on detected double-free.
+    pub fn insert(&mut self, to_insert: BlockPtr) -> Result<(), ()> {
         debug_assert!(
             to_insert.as_ref().prev.is_none(),
             "block: {} at {:p}",
@@ -55,9 +56,9 @@ impl IntrusiveList {
         Ok(())
     }
 
-    /// Removes and returns the first suitable block
+    /// Removes and returns the first suitable `BlockPtr`.
     #[inline]
-    pub fn pop(&mut self, size: usize) -> Option<BlockRegionPtr> {
+    pub fn pop(&mut self, size: usize) -> Option<BlockPtr> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             unsafe {
@@ -70,7 +71,7 @@ impl IntrusiveList {
                     );
                     return Some(self.remove(block));
                 }
-                if size + BLOCK_REGION_MIN_SIZE <= block.size() {
+                if size + BLOCK_MIN_SIZE <= block.size() {
                     dprintln!(
                         "[libdmalloc.so]: found suitable {} at {:p} for size {}",
                         block.as_ref(),
@@ -86,7 +87,7 @@ impl IntrusiveList {
         None
     }
 
-    /// Prints some debugging information about the heap structure
+    /// Prints some debugging information about the heap structure.
     #[cfg(feature = "debug")]
     pub fn debug(&self) {
         let mut i = 0;
@@ -126,14 +127,14 @@ impl IntrusiveList {
         }
     }
 
-    /// Add block to the list before the given element
-    unsafe fn insert_before(mut before: BlockRegionPtr, mut to_insert: BlockRegionPtr) {
+    /// Adds a `BlockPtr` to the list before the given anchor.
+    unsafe fn insert_before(mut anchor: BlockPtr, mut to_insert: BlockPtr) {
         // Update links in new block
-        to_insert.as_mut().prev = before.as_ref().prev;
-        to_insert.as_mut().next = Some(before);
+        to_insert.as_mut().prev = anchor.as_ref().prev;
+        to_insert.as_mut().next = Some(anchor);
 
         // Update link for element after new block
-        before.as_mut().prev = Some(to_insert);
+        anchor.as_mut().prev = Some(to_insert);
 
         // Update link for element before new block
         if let Some(mut prev) = to_insert.as_ref().prev {
@@ -141,14 +142,14 @@ impl IntrusiveList {
         }
     }
 
-    /// Add block to the list after the given element
-    unsafe fn insert_after(mut after: BlockRegionPtr, mut to_insert: BlockRegionPtr) {
+    /// Adds a `BlockPtr` to the list after the given anchor.
+    unsafe fn insert_after(mut anchor: BlockPtr, mut to_insert: BlockPtr) {
         // Update links in new block
-        to_insert.as_mut().next = after.as_ref().next;
-        to_insert.as_mut().prev = Some(after);
+        to_insert.as_mut().next = anchor.as_ref().next;
+        to_insert.as_mut().prev = Some(anchor);
 
         // Update link for element before new block
-        after.as_mut().next = Some(to_insert);
+        anchor.as_mut().next = Some(to_insert);
 
         // Update link for element after new block
         if let Some(mut next) = to_insert.as_ref().next {
@@ -156,9 +157,9 @@ impl IntrusiveList {
         }
     }
 
-    /// Checks if head or tail should be updated with current block
+    /// Checks if head or tail should be updated with the given `BlockPtr`.
     #[inline]
-    unsafe fn update_ends(&mut self, block: BlockRegionPtr) {
+    unsafe fn update_ends(&mut self, block: BlockPtr) {
         // Update head if necessary
         if block.as_ref().prev.is_none() {
             self.head = Some(block);
@@ -170,10 +171,11 @@ impl IntrusiveList {
         }
     }
 
-    /// Takes a pointer to a block and tries to merge it with next.
-    /// Returns a merged pointer if merge was possible, None otherwise.
+    /// Takes a `BlockPtr` and tries to merge it with the next block, if unused.
+    /// Returns a merged `BlockPtr` if merge was possible, `None` otherwise.
     /// NOTE: This function does not modify head or tail.
-    unsafe fn maybe_merge_next(mut block: BlockRegionPtr) -> Option<BlockRegionPtr> {
+    /// TODO: move method to Block?
+    unsafe fn maybe_merge_next(mut block: BlockPtr) -> Option<BlockPtr> {
         let next = block.as_ref().next?;
 
         if block.next_potential_block().as_ptr() != next.cast::<c_void>().as_ptr() {
@@ -188,35 +190,37 @@ impl IntrusiveList {
             n.as_mut().prev = Some(block);
         }
         // Update to final size
-        block.as_mut().size += BLOCK_REGION_META_SIZE + next.size();
+        block.as_mut().size += BLOCK_META_SIZE + next.size();
 
-        // Overwrite BlockRegion meta data for old block to detect double free
-        intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_REGION_META_SIZE);
+        // Overwrite block meta data for old block to detect double free
+        intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_META_SIZE);
 
         dprintln!("      -> {} at {:p}", block.as_ref(), block);
         return Some(block);
     }
 
-    /// Takes a pointer to a block and tries to merge it with prev.
-    /// Returns a merged pointer if merge was possible, None otherwise.
+    /// Takes a `BlockPtr` and tries to merge it with the prev block.
+    /// Returns a merged `BlockPtr` if merge was possible, `None` otherwise.
     /// NOTE: This function does not modify head or tail.
     #[inline]
-    unsafe fn maybe_merge_prev(block: BlockRegionPtr) -> Option<BlockRegionPtr> {
+    unsafe fn maybe_merge_prev(block: BlockPtr) -> Option<BlockPtr> {
         IntrusiveList::maybe_merge_next(block.as_ref().prev?)
     }
 
-    /// Merges adjacent blocks if possible.
-    /// Always returns a pointer to a block.
+    /// Takes a `BlockPtr` and tries to merge adjacent blocks if possible.
+    /// Always returns a `BlockPtr`.
     #[inline]
-    unsafe fn maybe_merge_adjacent(block: BlockRegionPtr) -> BlockRegionPtr {
+    unsafe fn maybe_merge_adjacent(block: BlockPtr) -> BlockPtr {
         let block = IntrusiveList::maybe_merge_prev(block).unwrap_or(block);
         return IntrusiveList::maybe_merge_next(block).unwrap_or(block);
     }
 
-    /// Returns first block that has a higher memory address than the given block.
-    /// TODO: implement as binary search
+    /// Returns first `BlockPtr` that has a higher memory address than the given `BlockPtr`
+    /// or `None` if no block exists at a higher memory address.
+    /// Returns `Err` if given `BlockPtr` is already in list.
+    /// TODO: implement with better algorithm
     #[inline]
-    fn find_higher_block(&self, to_insert: BlockRegionPtr) -> Result<Option<BlockRegionPtr>, ()> {
+    fn find_higher_block(&self, to_insert: BlockPtr) -> Result<Option<BlockPtr>, ()> {
         let mut ptr = self.head;
         while let Some(block) = ptr {
             if block == to_insert {
@@ -232,8 +236,8 @@ impl IntrusiveList {
         return Ok(None);
     }
 
-    /// Removes the given element from the list and returns it.
-    unsafe fn remove(&mut self, mut elem: BlockRegionPtr) -> BlockRegionPtr {
+    /// Removes the given `BlockPtr` from list and returns it.
+    unsafe fn remove(&mut self, mut elem: BlockPtr) -> BlockPtr {
         // Update head
         if let Some(head) = self.head {
             if elem == head {
@@ -348,7 +352,7 @@ mod tests {
         assert_eq!(list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
         assert_eq!(block.as_ref().prev, None);
-        assert_eq!(block.size(), 64 + BLOCK_REGION_META_SIZE + 64);
+        assert_eq!(block.size(), 64 + BLOCK_META_SIZE + 64);
 
         // Insert block3
         list.insert(block3).expect("unable to insert");
@@ -356,7 +360,7 @@ mod tests {
         assert_eq!(list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
         assert_eq!(block.as_ref().prev, None);
-        assert!(block.size() > 64 + BLOCK_REGION_META_SIZE + 64 + BLOCK_REGION_META_SIZE);
+        assert!(block.size() > 64 + BLOCK_META_SIZE + 64 + BLOCK_META_SIZE);
     }
 
     #[test]
