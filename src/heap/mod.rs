@@ -27,7 +27,6 @@ pub unsafe fn insert(mut block: BlockPtr) {
     let ptr = block.next_potential_block();
     if let Some(brk) = util::sbrk(0) {
         if ptr.as_ptr() == brk.as_ptr() {
-            // TODO: make sure value doesn't overflow
             let offset = block.block_size() as isize;
             dprintln!(
                 "[insert]: freeing {} bytes from process (break={:?})",
