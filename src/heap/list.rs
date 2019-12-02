@@ -1,8 +1,6 @@
-use core::{ffi::c_void, intrinsics};
-
 use libc_print::libc_eprintln;
 
-use crate::heap::block::{BlockPtr, BLOCK_META_SIZE, BLOCK_MIN_SIZE};
+use crate::heap::block::{BlockPtr, BLOCK_MIN_SIZE};
 
 #[repr(C)]
 pub struct IntrusiveList {
@@ -171,40 +169,12 @@ impl IntrusiveList {
         }
     }
 
-    /// Takes a `BlockPtr` and tries to merge it with the next block, if unused.
-    /// Returns a merged `BlockPtr` if merge was possible, `None` otherwise.
-    /// NOTE: This function does not modify head or tail.
-    /// TODO: move method to Block?
-    unsafe fn maybe_merge_next(mut block: BlockPtr) -> Option<BlockPtr> {
-        let next = block.as_ref().next?;
-
-        if block.next_potential_block().as_ptr() != next.cast::<c_void>().as_ptr() {
-            return None;
-        }
-
-        dprintln!("[merge]: {} at {:p}", block.as_ref(), block);
-        dprintln!("       & {} at {:p}", next.as_ref(), next);
-        // Update related links
-        block.as_mut().next = next.as_ref().next;
-        if let Some(mut n) = block.as_ref().next {
-            n.as_mut().prev = Some(block);
-        }
-        // Update to final size
-        block.as_mut().size += BLOCK_META_SIZE + next.size();
-
-        // Overwrite block meta data for old block to detect double free
-        intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_META_SIZE);
-
-        dprintln!("      -> {} at {:p}", block.as_ref(), block);
-        Some(block)
-    }
-
     /// Takes a `BlockPtr` and tries to merge it with the prev block.
     /// Returns a merged `BlockPtr` if merge was possible, `None` otherwise.
     /// NOTE: This function does not modify head or tail.
     #[inline]
     unsafe fn maybe_merge_prev(block: BlockPtr) -> Option<BlockPtr> {
-        IntrusiveList::maybe_merge_next(block.as_ref().prev?)
+        block.as_ref().prev?.maybe_merge_next()
     }
 
     /// Takes a `BlockPtr` and tries to merge adjacent blocks if possible.
@@ -212,7 +182,7 @@ impl IntrusiveList {
     #[inline]
     unsafe fn maybe_merge_adjacent(block: BlockPtr) -> BlockPtr {
         let block = IntrusiveList::maybe_merge_prev(block).unwrap_or(block);
-        IntrusiveList::maybe_merge_next(block).unwrap_or(block)
+        block.maybe_merge_next().unwrap_or(block)
     }
 
     /// Returns first `BlockPtr` that has a higher memory address than the given `BlockPtr`

@@ -1,4 +1,4 @@
-use core::{ffi::c_void, fmt, mem, ptr::Unique};
+use core::{ffi::c_void, fmt, intrinsics, mem, ptr::Unique};
 
 use libc_print::libc_eprintln;
 
@@ -89,6 +89,32 @@ impl BlockPtr {
     #[inline(always)]
     pub fn block_size(&self) -> usize {
         BLOCK_META_SIZE + self.size()
+    }
+
+    /// Tries to merge self with the next block, if available.
+    /// Returns a merged `BlockPtr` if merge was possible, `None` otherwise.
+    pub unsafe fn maybe_merge_next(mut self) -> Option<BlockPtr> {
+        let next = self.as_ref().next?;
+
+        if self.next_potential_block().as_ptr() != next.cast::<c_void>().as_ptr() {
+            return None;
+        }
+
+        dprintln!("[merge]: {} at {:p}", self.as_ref(), self);
+        dprintln!("       & {} at {:p}", next.as_ref(), next);
+        // Update related links
+        self.as_mut().next = next.as_ref().next;
+        if let Some(mut n) = self.as_ref().next {
+            n.as_mut().prev = Some(self);
+        }
+        // Update to final size
+        self.as_mut().size += BLOCK_META_SIZE + next.size();
+
+        // Overwrite block meta data for old block to detect double free
+        intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_META_SIZE);
+
+        dprintln!("      -> {} at {:p}", self.as_ref(), self);
+        Some(self)
     }
 
     /// Shrinks the block in-place to have the exact memory size as specified (excluding metadata).
