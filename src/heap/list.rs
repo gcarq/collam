@@ -240,6 +240,7 @@ impl IntrusiveList {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::heap::block::{BLOCK_META_SIZE, BLOCK_MIN_SIZE};
     use crate::heap::{alloc, request_block};
 
     #[test]
