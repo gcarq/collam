@@ -1,11 +1,11 @@
 [package]
-name = "dmalloc"
+name = "collam"
 version = "0.0.1"
 authors = ["Michael Egger <michael.egger@tsn.at>"]
 edition = "2018"
 
 [lib]
-name = "dmalloc"
+name = "collam"
 crate-type = ["cdylib"]
 
 [features]

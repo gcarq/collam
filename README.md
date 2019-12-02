@@ -1,4 +1,4 @@
-# dmalloc
+# collam
 A naive and thread safe general-purpose allocator written in Rust built with `#[no_std]`.
 This project started as an experiment to get comfortable with `#[no_std]` environments and `unsafe` Rust.
 This library is currently *NOT* stable and I'm sure there are plenty of bugs, be warned!
@@ -18,12 +18,12 @@ The overhead for each use allocated block is 16 bytes whereas only 12 bytes of t
 In regards of memory usage/overhead it is comparable to dlmalloc with tested applications,
 however the performance is not there yet.
 
-## Using dmalloc
+## Using collam
 Make sure you have Rust nightly.
 Manually overwrite default allocator:
 ```
 $ cargo build --release
-$ LD_PRELOAD="$(pwd)/target/release/libdmalloc.so" kwrite
+$ LD_PRELOAD="$(pwd)/target/release/libcollam.so" kwrite
 ```
 Or use the test script in the root folder:
 ```

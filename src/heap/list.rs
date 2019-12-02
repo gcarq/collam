@@ -64,7 +64,7 @@ impl IntrusiveList {
             unsafe {
                 if size == block.size() {
                     dprintln!(
-                        "[libdmalloc.so]: found perfect {} at {:p} for size {}",
+                        "[libcollam.so]: found perfect {} at {:p} for size {}",
                         block.as_ref(),
                         block,
                         size
@@ -73,7 +73,7 @@ impl IntrusiveList {
                 }
                 if size + BLOCK_MIN_SIZE <= block.size() {
                     dprintln!(
-                        "[libdmalloc.so]: found suitable {} at {:p} for size {}",
+                        "[libcollam.so]: found suitable {} at {:p} for size {}",
                         block.as_ref(),
                         block,
                         size

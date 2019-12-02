@@ -2,7 +2,7 @@
 set -e
 
 CHANNEL="release"
-TMP_DIR="/tmp/dmalloc-test"
+TMP_DIR="/tmp/collam-test"
 
 if [ -z "$1" ]; then
     EXECUTABLE="${TMP_DIR}/mem"
@@ -19,4 +19,4 @@ cargo build --features debug --release
 gcc mem.c -o ${TMP_DIR}/mem
 
 # Start test executable
-time LD_PRELOAD="$(pwd)/target/${CHANNEL}/libdmalloc.so" "${EXECUTABLE}"
+time LD_PRELOAD="$(pwd)/target/${CHANNEL}/libcollam.so" "${EXECUTABLE}"

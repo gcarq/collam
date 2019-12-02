@@ -62,7 +62,7 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
         return None;
     }
 
-    dprintln!("[libdmalloc.so]: alloc(size={})", size);
+    dprintln!("[libcollam.so]: alloc(size={})", size);
     let size = util::align_scalar(size).ok()?;
     // Check if there is already a suitable block allocated
     let mut block = if let Some(block) = unsafe { pop(size) } {
@@ -71,13 +71,13 @@ pub fn alloc(size: usize) -> Option<Unique<c_void>> {
     } else if let Some(block) = request_block(size) {
         block
     } else {
-        dprintln!("[libdmalloc.so]: failed for size: {}\n", size);
+        dprintln!("[libcollam.so]: failed for size: {}\n", size);
         return None;
     };
     shrink_insert_rem(&mut block, size);
 
     dprintln!(
-        "[libdmalloc.so]: returning {} at {:p}\n",
+        "[libcollam.so]: returning {} at {:p}\n",
         block.as_ref(),
         block
     );
