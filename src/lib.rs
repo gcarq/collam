@@ -166,10 +166,11 @@ pub extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn mallopt(param: i32, value: i32) -> i32 {
-    panic!(
+    eprintln!(
         "[mallopt] not implemented! (param={}, value={})",
         param, value
     );
+    return 1;
 }
 
 #[cfg(not(test))]
