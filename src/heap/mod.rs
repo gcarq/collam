@@ -13,6 +13,10 @@ mod list;
 
 static mut HEAP: IntrusiveList = IntrusiveList::new();
 
+lazy_static! {
+    static ref PAGE_SIZE: usize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+}
+
 /// Inserts a `BlockPtr` to the heap structure.
 /// NOTE: The memory is returned to the OS if it is adjacent to program break.
 pub unsafe fn insert(mut block: BlockPtr) {
@@ -103,8 +107,7 @@ pub fn shrink_insert_rem(block: &mut BlockPtr, size: usize) {
 /// Requests memory for the specified size from kernel
 /// and returns a `BlockPtr` to the newly created block or `None` if not possible.
 fn request_block(min_size: usize) -> Option<BlockPtr> {
-    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-    let size = util::align_val(BLOCK_META_SIZE + min_size, page_size).ok()?;
+    let size = util::align_val(BLOCK_META_SIZE + min_size, *PAGE_SIZE).ok()?;
     Some(BlockPtr::new(
         util::sbrk(size as isize)?,
         size - BLOCK_META_SIZE,

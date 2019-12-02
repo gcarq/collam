@@ -15,6 +15,7 @@ stats = []
 [dependencies]
 libc = { version = "0.2", default-features = false }
 libc-print = "0.1.11"
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 spin = "0.5.2"
 
 [profile.dev]
