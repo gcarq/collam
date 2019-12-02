@@ -80,7 +80,9 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
             None => return null_mut(),
         };
 
-        block.verify(true);
+        if !block.verify() {
+            panic!("Unable to verify {} at {:p}", block.as_ref(), block);
+        }
         block
     };
     let old_block_size = old_block.size();
@@ -129,7 +131,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
             Some(b) => b,
             None => return,
         };
-        if !block.verify(false) {
+        if !block.verify() {
             eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
             return;
         }
@@ -151,7 +153,7 @@ pub extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
         Some(b) => b,
         None => return 0,
     };
-    if !block.verify(false) {
+    if !block.verify() {
         eprintln!(
             "malloc_usable_size(): Unable to verify {} at {:p}",
             block.as_ref(),

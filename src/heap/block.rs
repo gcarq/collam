@@ -4,7 +4,7 @@ use libc_print::libc_eprintln;
 
 use crate::util;
 
-/// The required block size to store the bare minimum of metadata (size + magic value).
+/// The required block size to store the bare minimum of metadata (size + magic values).
 pub const BLOCK_META_SIZE: usize = util::align_scalar_unchecked(mem::align_of::<usize>() * 2);
 /// The minimal size of a block if not allocated by the user.
 /// This is `BLOCK_META_SIZE` including space to save intrusive data structures.
@@ -50,7 +50,7 @@ impl BlockPtr {
     /// Returns a pointer to the assigned memory region for the given block
     #[inline]
     pub fn mem_region(&self) -> Unique<c_void> {
-        debug_assert!(self.verify(false));
+        debug_assert!(self.verify());
         unsafe {
             Unique::new_unchecked(
                 self.as_ptr()
@@ -153,20 +153,9 @@ impl BlockPtr {
 
     /// Verifies block to detect memory corruption.
     /// Returns `true` if block metadata is intact, `false` otherwise.
-    #[inline]
-    pub fn verify(&self, panic: bool) -> bool {
-        if self.as_ref().magic == BLOCK_MAGIC_FREE {
-            return true;
-        }
-
-        if panic {
-            panic!(
-                "[heap] magic value does not match (got=0x{:X}, expected=0x{:X})",
-                self.as_ref().magic,
-                BLOCK_MAGIC_FREE
-            );
-        }
-        false
+    #[inline(always)]
+    pub fn verify(&self) -> bool {
+        self.as_ref().magic == BLOCK_MAGIC_FREE
     }
 }
 
@@ -240,7 +229,7 @@ mod tests {
             BLOCK_META_SIZE + size,
             "block raw size doesn't match"
         );
-        assert!(block.verify(false), "unable to verify block metadata");
+        assert!(block.verify(), "unable to verify block metadata");
         assert!(block.as_ref().next.is_none(), "next is not None");
         assert!(block.as_ref().prev.is_none(), "prev is not None");
     }
@@ -319,7 +308,7 @@ mod tests {
                 .expect("unable to allocate memory")
         };
         let block = BlockPtr::new(ptr, alloc_size);
-        assert_eq!(block.verify(false), true);
+        assert_eq!(block.verify());
         unsafe { libc::free(ptr.as_ptr()) };
     }
 
@@ -332,7 +321,8 @@ mod tests {
         };
         let mut block = BlockPtr::new(ptr, alloc_size);
         block.as_mut().magic = 0x1234;
-        assert_eq!(block.verify(false), false);
+        assert_eq!(block.verify(), false);
+
         unsafe { libc::free(ptr.as_ptr()) };
     }
 
