@@ -171,19 +171,14 @@ impl IntrusiveList {
         }
     }
 
-    /// Takes a `BlockPtr` and tries to merge it with the prev block.
-    /// Returns a merged `BlockPtr` if merge was possible, `None` otherwise.
-    /// NOTE: This function does not modify head or tail.
-    #[inline]
-    unsafe fn maybe_merge_prev(block: BlockPtr) -> Option<BlockPtr> {
-        block.as_ref().prev?.maybe_merge_next()
-    }
-
     /// Takes a `BlockPtr` and tries to merge adjacent blocks if possible.
     /// Always returns a `BlockPtr`.
     #[inline]
     unsafe fn maybe_merge_adjacent(block: BlockPtr) -> BlockPtr {
-        let block = IntrusiveList::maybe_merge_prev(block).unwrap_or(block);
+        let block = match block.as_ref().prev {
+            Some(prev) => prev.maybe_merge_next().unwrap_or(block),
+            None => block,
+        };
         block.maybe_merge_next().unwrap_or(block)
     }
 
