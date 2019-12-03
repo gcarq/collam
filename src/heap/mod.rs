@@ -19,7 +19,7 @@ lazy_static! {
 
 /// Inserts a `BlockPtr` to the heap structure.
 /// NOTE: The memory is returned to the OS if it is adjacent to program break.
-pub unsafe fn insert(mut block: BlockPtr) {
+pub unsafe fn insert(block: BlockPtr) {
     #[cfg(feature = "debug")]
     HEAP.debug();
     #[cfg(feature = "stats")]
@@ -42,8 +42,6 @@ pub unsafe fn insert(mut block: BlockPtr) {
         }
     }
 
-    block.as_mut().prev = None;
-    block.as_mut().next = None;
     dprintln!("[insert]: {} at {:p}", block.as_ref(), block);
     if HEAP.insert(block).is_err() {
         eprintln!("double free detected for ptr {:?}", block.mem_region());

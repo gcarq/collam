@@ -60,6 +60,12 @@ impl BlockPtr {
         }
     }
 
+    #[inline]
+    pub fn unlink(&mut self) {
+        self.as_mut().next = None;
+        self.as_mut().prev = None;
+    }
+
     /// Acquires underlying `*mut Block`.
     #[inline(always)]
     pub const fn as_ptr(self) -> *mut Block {
@@ -220,7 +226,6 @@ impl fmt::Display for Block {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::heap::alloc;
 
     fn assert_block(block: BlockPtr, size: usize) {
         assert_eq!(block.size(), size, "block size doesn't match");

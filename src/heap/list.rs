@@ -18,19 +18,9 @@ impl IntrusiveList {
 
     /// Inserts a `BlockPtr` to the existing list and
     /// returns `Err` on detected double-free.
-    pub fn insert(&mut self, to_insert: BlockPtr) -> Result<(), ()> {
-        debug_assert!(
-            to_insert.as_ref().prev.is_none(),
-            "block: {} at {:p}",
-            to_insert.as_ref(),
-            to_insert
-        );
-        debug_assert!(
-            to_insert.as_ref().next.is_none(),
-            "block: {} at {:p}",
-            to_insert.as_ref(),
-            to_insert
-        );
+    pub fn insert(&mut self, mut to_insert: BlockPtr) -> Result<(), ()> {
+        // Reset pointer locations since they were part as user allocatable data
+        to_insert.unlink();
 
         // Add initial element
         if self.head.is_none() {
@@ -217,10 +207,7 @@ impl IntrusiveList {
         if let Some(mut next) = elem.as_ref().next {
             next.as_mut().prev = elem.as_ref().prev;
         }
-
-        // Clear links in current element
-        elem.as_mut().next = None;
-        elem.as_mut().prev = None;
+        elem.unlink();
         elem
     }
 
@@ -247,8 +234,8 @@ impl Iterator for Iter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::heap::block::{BLOCK_META_SIZE, BLOCK_MIN_SIZE};
-    use crate::heap::{alloc, request_block};
+    use crate::heap::block::BLOCK_META_SIZE;
+    use crate::heap::request_block;
 
     #[test]
     fn test_insert_after_no_merge() {
