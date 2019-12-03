@@ -57,8 +57,7 @@ impl IntrusiveList {
     /// Removes and returns the first suitable `BlockPtr`.
     #[inline]
     pub fn pop(&mut self, size: usize) -> Option<BlockPtr> {
-        let mut ptr = self.head;
-        while let Some(block) = ptr {
+        for block in self.iter() {
             unsafe {
                 if size == block.size() {
                     dprintln!(
@@ -78,8 +77,6 @@ impl IntrusiveList {
                     );
                     return Some(self.remove(block));
                 }
-
-                ptr = block.as_ref().next;
             }
         }
         None
@@ -88,9 +85,7 @@ impl IntrusiveList {
     /// Prints some debugging information about the heap structure.
     #[cfg(feature = "debug")]
     pub fn debug(&self) {
-        let mut i = 0;
-        let mut ptr = self.head;
-        while let Some(block) = ptr {
+        for (i, block) in self.iter().enumerate() {
             dprintln!("[debug]: pos: {}\t{} at\t{:p}", i, block.as_ref(), block);
             if !block.verify() {
                 panic!("Unable to verify: {} at\t{:p}", block.as_ref(), block);
@@ -122,8 +117,6 @@ impl IntrusiveList {
                     next
                 );
             }
-            ptr = block.as_ref().next;
-            i += 1;
         }
     }
 
@@ -188,8 +181,7 @@ impl IntrusiveList {
     /// TODO: implement with better algorithm
     #[inline]
     fn find_higher_block(&self, to_insert: BlockPtr) -> Result<Option<BlockPtr>, ()> {
-        let mut ptr = self.head;
-        while let Some(block) = ptr {
+        for block in self.iter() {
             if block == to_insert {
                 // block is already in list.
                 // One reason for this is double free()
@@ -198,7 +190,6 @@ impl IntrusiveList {
             if block.as_ptr() > to_insert.as_ptr() {
                 return Ok(Some(block));
             }
-            ptr = block.as_ref().next;
         }
         Ok(None)
     }
@@ -231,6 +222,25 @@ impl IntrusiveList {
         elem.as_mut().next = None;
         elem.as_mut().prev = None;
         elem
+    }
+
+    #[inline]
+    pub fn iter(&self) -> Iter {
+        Iter { next: self.head }
+    }
+}
+
+pub struct Iter {
+    next: Option<BlockPtr>,
+}
+
+impl Iterator for Iter {
+    type Item = BlockPtr;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next.map(|node| {
+            self.next = node.as_ref().next;
+            node
+        })
     }
 }
 
@@ -369,6 +379,24 @@ mod tests {
         assert_eq!(result.as_ref().next, None);
         assert_eq!(result.as_ref().prev, None);
         assert_eq!(result.size(), 64);
+    }
+
+    #[test]
+    fn test_iter() {
+        let mut list = IntrusiveList::new();
+        let mut block = request_block(256).expect("unable to request block");
+        let mut block2 = block.shrink(64).expect("unable to split block");
+        let block3 = block2.shrink(64).expect("unable to split block");
+
+        // Insert block1
+        list.insert(block).expect("unable to insert");
+        // Insert block3
+        list.insert(block3).expect("unable to insert");
+
+        let mut iter = list.iter();
+        assert_eq!(iter.next().unwrap(), block);
+        assert_eq!(iter.next().unwrap(), block3);
+        assert!(iter.next().is_none());
     }
 
     #[cfg(feature = "debug")]

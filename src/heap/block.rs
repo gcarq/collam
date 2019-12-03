@@ -308,7 +308,7 @@ mod tests {
                 .expect("unable to allocate memory")
         };
         let block = BlockPtr::new(ptr, alloc_size);
-        assert_eq!(block.verify());
+        assert!(block.verify());
         unsafe { libc::free(ptr.as_ptr()) };
     }
 
