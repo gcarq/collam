@@ -1,3 +1,4 @@
+use core::alloc::Layout;
 use core::{ffi::c_void, ptr::Unique};
 
 use libc_print::libc_eprintln;
@@ -59,13 +60,17 @@ pub unsafe fn pop(size: usize) -> Option<BlockPtr> {
 /// Find a usable memory region for the given size either by
 /// reusing or requesting memory from the kernel.
 /// Returns a `Unique<c_void>` pointer to the memory region.
-pub fn alloc(size: usize) -> Option<Unique<c_void>> {
-    if size == 0 {
+pub fn alloc(layout: Layout) -> Option<Unique<c_void>> {
+    if layout.size() == 0 {
         return None;
     }
 
+    debug_assert_eq!(
+        layout.size(),
+        layout.pad_to_align().expect("unable to align").size()
+    );
+    let size = layout.size();
     dprintln!("[libcollam.so]: alloc(size={})", size);
-    let size = util::align_scalar(size).ok()?;
     // Check if there is already a suitable block allocated
     let mut block = if let Some(block) = unsafe { pop(size) } {
         block
@@ -105,7 +110,9 @@ pub fn shrink_insert_rem(block: &mut BlockPtr, size: usize) {
 /// Requests memory for the specified size from kernel
 /// and returns a `BlockPtr` to the newly created block or `None` if not possible.
 fn request_block(min_size: usize) -> Option<BlockPtr> {
-    let size = util::align_val(BLOCK_META_SIZE + min_size, *PAGE_SIZE).ok()?;
+    let size = util::pad_to_align(BLOCK_META_SIZE + min_size, *PAGE_SIZE)
+        .ok()?
+        .size();
     Some(BlockPtr::new(
         util::sbrk(size as isize)?,
         size - BLOCK_META_SIZE,

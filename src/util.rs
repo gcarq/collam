@@ -1,3 +1,4 @@
+use core::alloc::{Layout, LayoutErr};
 use core::ffi::c_void;
 use core::mem::align_of;
 use core::ptr::Unique;
@@ -18,47 +19,25 @@ pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
     Unique::new(ptr)
 }
 
-/// Aligns passed value to align and returns it.
-/// Rounded up size is:
-/// size_rounded_up = (size + align - 1) & !(align - 1);
-///
-/// We know from above that align != 0. If adding align
-/// does not overflow, then rounding up will be fine.
-///
-/// Conversely, &-masking with !(align - 1) will subtract off
-/// only low-order-bits. Thus if overflow occurs with the sum,
-/// the &-mask cannot subtract enough to undo that overflow.
-///
-/// Above implies that checking for summation overflow is both
-/// necessary and sufficient.
-#[inline]
-pub fn align_val(val: usize, align: usize) -> Result<usize, ()> {
-    if val > usize::max_value() - align {
-        return Err(());
-    }
-    Ok(align_val_unchecked(val, align))
-}
-
-/// Aligns passed value to align and returns it.
+/// Aligns passed value to be at lest the size of the
+/// largest scalar type `libc::max_align_t` and returns it.
 /// NOTE: not checked for overflows!
-#[inline]
-pub const fn align_val_unchecked(val: usize, align: usize) -> usize {
+pub const fn align_scalar_unchecked(val: usize) -> usize {
+    let align = align_of::<libc::max_align_t>();
     (val + align - 1) & !(align - 1)
 }
 
-/// Aligns passed value to be at lest the size of the
-/// largest scalar type `libc::max_align_t` and returns it.
+/// Returns a `Layout` padded to the largest
+/// possible scalar for the current architecture.
 #[inline]
-pub fn align_scalar(val: usize) -> Result<usize, ()> {
-    align_val(val, align_of::<libc::max_align_t>())
+pub fn pad_to_scalar(size: usize) -> Result<Layout, LayoutErr> {
+    Layout::from_size_align(size, align_of::<libc::max_align_t>())?.pad_to_align()
 }
 
-/// Aligns passed value to be at lest the size of the
-/// largest scalar type `libc::max_align_t` and returns it.
-/// NOTE: not checked for overflows!
+/// Returns a `Layout` padded to align.
 #[inline]
-pub const fn align_scalar_unchecked(val: usize) -> usize {
-    align_val_unchecked(val, align_of::<libc::max_align_t>())
+pub fn pad_to_align(size: usize, align: usize) -> Result<Layout, LayoutErr> {
+    Layout::from_size_align(size, align)?.pad_to_align()
 }
 
 #[cfg(test)]
@@ -66,45 +45,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_align_val_ok() {
-        let align = 4096;
-        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
-            assert_eq!(align_val(*val, align).expect("unable to align") % align, 0);
-        }
-    }
-
-    #[test]
-    fn test_align_val_err() {
-        assert_eq!(align_val(usize::max_value() - 12, 4096), Err(()));
-    }
-
-    #[test]
-    fn test_align_val_unchecked() {
-        let align = 4096;
-        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
-            assert_eq!(align_val_unchecked(*val, align) % align, 0);
-        }
-    }
-
-    #[test]
-    fn test_align_scalar_ok() {
-        let align = align_of::<libc::max_align_t>();
-        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
-            assert_eq!(align_scalar(*val).expect("unable to align") % align, 0);
-        }
-    }
-
-    #[test]
-    fn test_align_scalar_err() {
-        assert_eq!(align_scalar(usize::max_value() - 15), Err(()));
-    }
-
-    #[test]
     fn test_align_scalar_unchecked() {
         let align = align_of::<libc::max_align_t>();
         for val in [0, 5, 491, 5910, 15290, 501920].iter() {
             assert_eq!(align_scalar_unchecked(*val) % align, 0);
         }
+    }
+
+    #[test]
+    fn test_pad_to_align_ok() {
+        let align = 4096;
+        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
+            let layout = pad_to_align(*val, align).expect("unable to align");
+            assert_eq!(layout.size() % align, 0);
+        }
+    }
+
+    #[test]
+    fn test_pad_to_align_err() {
+        assert!(pad_to_align(usize::max_value() - 12, 4096).is_err());
+    }
+
+    #[test]
+    fn test_pad_to_scalar_ok() {
+        let align = align_of::<libc::max_align_t>();
+        for val in [0, 5, 491, 5910, 15290, 501920].iter() {
+            let layout = pad_to_scalar(*val).expect("unable to align");
+            assert_eq!(layout.size() % align, 0);
+        }
+    }
+
+    #[test]
+    fn test_pad_to_scalar_err() {
+        assert!(pad_to_scalar(usize::max_value() - 14).is_err());
     }
 
     #[test]

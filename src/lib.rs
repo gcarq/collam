@@ -3,6 +3,7 @@
 #![feature(core_intrinsics)]
 #![feature(core_panic_info)]
 #![feature(ptr_internals)]
+#![feature(alloc_layout_extra)]
 #![no_std]
 
 extern crate libc;
@@ -31,8 +32,13 @@ static MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn malloc(size: usize) -> *mut c_void {
+    let layout = match util::pad_to_scalar(size) {
+        Ok(l) => l,
+        Err(_) => return null_mut(),
+    };
+
     let _lock = MUTEX.lock();
-    match heap::alloc(size) {
+    match heap::alloc(layout) {
         Some(p) => p.as_ptr(),
         None => null_mut(),
     }
@@ -46,13 +52,18 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
         None => panic!("integer overflow detected (nobj={}, size={})", nobj, size),
     };
 
+    let layout = match util::pad_to_scalar(total_size) {
+        Ok(l) => l,
+        Err(_) => return null_mut(),
+    };
+
     let _lock = MUTEX.lock();
-    let ptr = match heap::alloc(total_size) {
+    let ptr = match heap::alloc(layout) {
         Some(p) => p.as_ptr(),
         None => return null_mut(),
     };
     // Initialize memory region with 0.
-    unsafe { intrinsics::volatile_set_memory(ptr, 0, total_size) }
+    unsafe { intrinsics::volatile_set_memory(ptr, 0, layout.size()) }
     ptr
 }
 
@@ -61,8 +72,14 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size.
+
+        let layout = match util::pad_to_scalar(size) {
+            Ok(l) => l,
+            Err(_) => return null_mut(),
+        };
+
         let _lock = MUTEX.lock();
-        return match heap::alloc(size) {
+        return match heap::alloc(layout) {
             Some(p) => p.as_ptr(),
             None => null_mut(),
         };
@@ -86,29 +103,30 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
         block
     };
     let old_block_size = old_block.size();
-    let size = match util::align_scalar(size) {
-        Ok(size) => size,
+
+    let layout = match util::pad_to_scalar(size) {
+        Ok(l) => l,
         Err(_) => return null_mut(),
     };
 
     let _lock = MUTEX.lock();
     // Shrink allocated block if size is smaller.
-    if size < old_block_size {
-        heap::shrink_insert_rem(&mut old_block, size);
+    if layout.size() < old_block_size {
+        heap::shrink_insert_rem(&mut old_block, layout.size());
         return p;
     }
 
     // Just return pointer if size didn't change.
-    if size == old_block_size {
+    if layout.size() == old_block_size {
         return p;
     }
 
     // Allocate new region to fit size.
-    let new_ptr = match heap::alloc(size) {
+    let new_ptr = match heap::alloc(layout) {
         Some(p) => p.as_ptr(),
         None => return null_mut(),
     };
-    let copy_size = cmp::min(size, old_block_size);
+    let copy_size = cmp::min(layout.size(), old_block_size);
     unsafe {
         intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, p, copy_size);
         // Add old block back to heap structure.

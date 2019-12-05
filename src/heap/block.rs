@@ -25,7 +25,7 @@ impl BlockPtr {
     /// Creates a `Block` instance at the given raw pointer for the specified size.
     #[inline]
     pub fn new(ptr: Unique<c_void>, size: usize) -> Self {
-        debug_assert_eq!(size, util::align_scalar(size).unwrap());
+        debug_assert_eq!(size, util::pad_to_scalar(size).unwrap().size());
         let ptr = ptr.cast::<Block>();
         unsafe {
             *ptr.as_ptr() = Block {
@@ -127,7 +127,10 @@ impl BlockPtr {
     /// Returns a newly created `BlockPtr` with the remaining size or `None` if split is not possible.
     pub fn shrink(&mut self, size: usize) -> Option<BlockPtr> {
         dprintln!("[split]: {} at {:p}", self.as_ref(), self);
-        debug_assert_eq!(size, util::align_scalar_unchecked(size));
+        debug_assert_eq!(
+            size,
+            util::pad_to_scalar(size).expect("unable to align").size()
+        );
         // Check if its possible to split the block with the requested size
         let rem_block_size = self.size().checked_sub(size + BLOCK_META_SIZE)?;
 
