@@ -21,6 +21,7 @@ use core::ptr::{null_mut, Unique};
 use core::{alloc::GlobalAlloc, ffi::c_void, intrinsics, panic};
 
 use crate::alloc::{block::BlockPtr, Collam};
+use core::alloc::Layout;
 use libc_print::libc_eprintln;
 
 mod macros;
@@ -79,7 +80,8 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if size == 0 {
         // If size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr).
-        unsafe { COLLAM.dealloc_unchecked(ptr) };
+        let layout = unsafe { Layout::from_size_align_unchecked(0, 16) };
+        unsafe { COLLAM.dealloc(p.cast::<u8>(), layout) };
         return null_mut();
     }
 
@@ -92,12 +94,8 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn free(ptr: *mut c_void) {
-    let ptr = match Unique::new(ptr) {
-        Some(p) => p,
-        None => return,
-    };
-
-    unsafe { COLLAM.dealloc_unchecked(ptr) };
+    let layout = unsafe { Layout::from_size_align_unchecked(0, 16) };
+    unsafe { COLLAM.dealloc(ptr.cast::<u8>(), layout) };
 }
 
 #[cfg(not(test))]

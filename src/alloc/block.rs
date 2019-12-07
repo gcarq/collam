@@ -49,15 +49,13 @@ impl BlockPtr {
 
     /// Returns a pointer to the assigned memory region for the given block
     #[inline]
-    pub fn mem_region(&self) -> Unique<c_void> {
+    pub unsafe fn mem_region(&self) -> Unique<c_void> {
         debug_assert!(self.verify());
-        unsafe {
-            Unique::new_unchecked(
-                self.as_ptr()
-                    .cast::<c_void>()
-                    .offset(BLOCK_META_SIZE as isize),
-            )
-        }
+        Unique::new_unchecked(
+            self.as_ptr()
+                .cast::<c_void>()
+                .offset(BLOCK_META_SIZE as isize),
+        )
     }
 
     #[inline(always)]
@@ -342,7 +340,7 @@ mod tests {
                 .expect("unable to allocate memory")
         };
         let block = BlockPtr::new(ptr, alloc_size);
-        let mem = block.mem_region();
+        let mem = unsafe { block.mem_region() };
         assert!(mem.as_ptr() > block.as_ptr().cast::<c_void>());
         let block2 = BlockPtr::from_mem_region(mem).expect("unable to create from mem region");
         assert_eq!(block, block2);

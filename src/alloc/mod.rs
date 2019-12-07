@@ -59,7 +59,7 @@ impl Collam {
         }
 
         dprintln!("[insert]: {} at {:p}", block.as_ref(), block);
-        if (*heap).insert(block).is_err() {
+        if unlikely((*heap).insert(block).is_err()) {
             eprintln!("double free detected for ptr {:?}", block.mem_region());
         }
     }
@@ -78,20 +78,6 @@ impl Collam {
         }
         // Request new block from kernel
         request_block(size)
-    }
-
-    #[inline]
-    pub unsafe fn dealloc_unchecked(&self, ptr: Unique<c_void>) {
-        let block = match BlockPtr::from_mem_region(ptr) {
-            Some(b) => b,
-            None => return,
-        };
-        if unlikely(!block.verify()) {
-            eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
-            return;
-        }
-        // Add freed block back to heap structure.
-        self.release_block(block)
     }
 
     pub unsafe fn _realloc(&self, ptr: Unique<c_void>, new_size: usize) -> Option<Unique<c_void>> {
@@ -177,7 +163,16 @@ unsafe impl GlobalAlloc for Collam {
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         if let Some(p) = Unique::new(ptr) {
-            self.dealloc_unchecked(p.cast::<c_void>());
+            let block = match BlockPtr::from_mem_region(p.cast::<c_void>()) {
+                Some(b) => b,
+                None => return,
+            };
+            if unlikely(!block.verify()) {
+                eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
+                return;
+            }
+            // Add freed block back to heap structure.
+            self.release_block(block)
         }
     }
 
