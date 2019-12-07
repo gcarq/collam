@@ -184,7 +184,8 @@ unsafe impl GlobalAlloc for Collam {
 
 /// Requests memory for the specified size from kernel
 /// and returns a `BlockPtr` to the newly created block or `None` if not possible.
-fn request_block(min_size: usize) -> Option<BlockPtr> {
+/// Marked as unsafe because it is not thread safe.
+unsafe fn request_block(min_size: usize) -> Option<BlockPtr> {
     let size = util::pad_to_align(BLOCK_META_SIZE + min_size, *PAGE_SIZE)
         .ok()?
         .size();
@@ -198,21 +199,104 @@ fn request_block(min_size: usize) -> Option<BlockPtr> {
 mod tests {
     use super::*;
     use crate::util;
+    use core::intrinsics::write_bytes;
 
     #[test]
     fn test_request_block() {
-        let block = request_block(256).expect("unable to request block");
-        let brk = block.next_potential_block().as_ptr();
-        assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
+        unsafe {
+            let block = request_block(256).expect("unable to request block");
+            let brk = block.next_potential_block().as_ptr();
+            assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
+        }
     }
 
     #[test]
     fn test_request_block_split() {
-        let rem_block = request_block(256)
-            .expect("unable to request block")
-            .shrink(128)
-            .expect("unable to split block");
-        let brk = rem_block.next_potential_block().as_ptr();
-        assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
+        unsafe {
+            let rem_block = request_block(256)
+                .expect("unable to request block")
+                .shrink(128)
+                .expect("unable to split block");
+            let brk = rem_block.next_potential_block().as_ptr();
+            assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
+        }
+    }
+
+    #[test]
+    fn test_collam_alloc_ok() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(123).expect("unable to align layout");
+            let ptr = collam.alloc(layout);
+            assert!(!ptr.is_null());
+            write_bytes(ptr, 1, 123);
+            collam.dealloc(ptr, layout);
+        }
+    }
+
+    #[test]
+    fn test_collam_alloc_zero_size() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(0).expect("unable to align layout");
+            let ptr = collam.alloc(layout);
+            assert!(ptr.is_null());
+        }
+    }
+
+    #[test]
+    fn test_collam_realloc_ok() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(16).expect("unable to align layout");
+            let ptr = collam.alloc(layout);
+            assert!(!ptr.is_null());
+
+            let ptr = collam.realloc(ptr, layout, 789);
+            write_bytes(ptr, 2, 789);
+            collam.dealloc(ptr, layout);
+        }
+    }
+
+    #[test]
+    fn test_collam_realloc_null() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(16).expect("unable to align layout");
+            let ptr = collam.realloc(null_mut(), layout, 789);
+            assert_eq!(ptr, null_mut());
+        }
+    }
+
+    #[test]
+    fn test_collam_dealloc_null() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(16).expect("unable to align layout");
+            collam.dealloc(null_mut(), layout);
+        }
+    }
+
+    #[test]
+    fn test_collam_memory_corruption() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(16).expect("unable to align layout");
+            let ptr = collam.alloc(layout);
+            assert!(!ptr.is_null());
+
+            // Overwrite block metadata to simulate memory corruption
+            let meta_ptr = ptr.offset(-(BLOCK_META_SIZE as isize));
+            meta_ptr.write_bytes(0, BLOCK_META_SIZE);
+
+            // Calling realloc on a corrupt memory region
+            let ptr = collam.realloc(ptr, layout, 789);
+            assert!(ptr.is_null());
+
+            // Calling alloc again. We expect to get a new block, the old memory is leaked.
+            let ptr = collam.alloc(layout);
+            assert!(!ptr.is_null());
+            collam.dealloc(ptr, layout);
+        }
     }
 }

@@ -7,16 +7,16 @@ use core::ptr::Unique;
 #[cfg(feature = "stats")]
 use crate::stats;
 
+/// Wrapper for the kernel sbrk call.
+/// Marked as unsafe because it is not thread safe.
 #[inline]
-pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
-    let ptr = unsafe { libc::sbrk(size) };
-    if unsafe { unlikely(ptr == -1_isize as *mut c_void) } {
+pub unsafe fn sbrk(size: isize) -> Option<Unique<c_void>> {
+    let ptr = libc::sbrk(size);
+    if unlikely(ptr == -1_isize as *mut c_void) {
         return None;
     }
     #[cfg(feature = "stats")]
-    unsafe {
-        stats::update_heap_info(ptr);
-    }
+    stats::update_heap_info(ptr);
     Unique::new(ptr)
 }
 
@@ -83,11 +83,13 @@ mod tests {
 
     #[test]
     fn test_sbrk_ok() {
-        assert!(sbrk(0).is_some())
+        unsafe { assert!(sbrk(0).is_some()) };
     }
 
     #[test]
     fn test_sbrk_err() {
-        assert!(sbrk(isize::min_value()).is_none());
+        unsafe {
+            assert!(sbrk(isize::min_value()).is_none());
+        }
     }
 }

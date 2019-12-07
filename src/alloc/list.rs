@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(list.head, None);
         assert_eq!(list.tail, None);
 
-        let mut block = request_block(256).expect("unable to request block");
+        let mut block = unsafe { request_block(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
@@ -270,7 +270,7 @@ mod tests {
         assert_eq!(list.head, None);
         assert_eq!(list.tail, None);
 
-        let mut block = request_block(256).expect("unable to request block");
+        let mut block = unsafe { request_block(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(list.head, None);
         assert_eq!(list.tail, None);
 
-        let mut block = request_block(256).expect("unable to request block");
+        let mut block = unsafe { request_block(256).expect("unable to request block") };
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn test_pop_exact_size() {
         let mut list = IntrusiveList::new();
-        let mut block = request_block(512).expect("unable to request block");
+        let mut block = unsafe { request_block(512).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
@@ -350,7 +350,7 @@ mod tests {
     #[test]
     fn test_pop_smaller_size() {
         let mut list = IntrusiveList::new();
-        let mut block = request_block(512).expect("unable to request block");
+        let mut block = unsafe { request_block(512).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn test_iter() {
         let mut list = IntrusiveList::new();
-        let mut block = request_block(256).expect("unable to request block");
+        let mut block = unsafe { request_block(256).expect("unable to request block") };
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
@@ -389,7 +389,7 @@ mod tests {
     #[test]
     fn test_debug() {
         let mut list = IntrusiveList::new();
-        let mut block = request_block(256).expect("unable to request block");
+        let mut block = unsafe { request_block(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
