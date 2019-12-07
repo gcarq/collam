@@ -17,9 +17,9 @@ extern crate spin;
 extern crate std;
 
 use core::ptr::{null_mut, Unique};
-use core::{ffi::c_void, intrinsics, panic};
+use core::{alloc::GlobalAlloc, ffi::c_void, intrinsics, panic};
 
-use crate::alloc::block::BlockPtr;
+use crate::alloc::{block::BlockPtr, Collam};
 use libc_print::libc_eprintln;
 
 mod macros;
@@ -27,6 +27,8 @@ mod alloc;
 #[cfg(feature = "stats")]
 mod stats;
 mod util;
+
+static mut COLLAM: Collam = Collam::new();
 
 #[cfg(not(test))]
 #[no_mangle]
@@ -36,7 +38,7 @@ pub extern "C" fn malloc(size: usize) -> *mut c_void {
         Err(_) => return null_mut(),
     };
 
-    match unsafe { alloc::alloc(layout) } {
+    match unsafe { COLLAM._alloc(layout) } {
         Some(p) => p.as_ptr(),
         None => null_mut(),
     }
@@ -55,12 +57,7 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
         Err(_) => return null_mut(),
     };
 
-    unsafe {
-        match alloc::alloc_zeroed(layout) {
-            Some(p) => p.cast::<c_void>().as_ptr(),
-            None => null_mut(),
-        }
-    }
+    unsafe { COLLAM.alloc_zeroed(layout).cast::<c_void>() }
 }
 
 #[cfg(not(test))]
@@ -74,7 +71,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
             Err(_) => return null_mut(),
         };
 
-        return match unsafe { alloc::alloc(layout) } {
+        return match unsafe { COLLAM._alloc(layout) } {
             Some(p) => p.as_ptr(),
             None => null_mut(),
         };
@@ -85,11 +82,11 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if size == 0 {
         // If size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr).
-        unsafe { alloc::dealloc(ptr) };
+        unsafe { COLLAM.dealloc_unchecked(ptr) };
         return null_mut();
     }
 
-    match unsafe { alloc::realloc(ptr, size) } {
+    match unsafe { COLLAM._realloc(ptr, size) } {
         Some(p) => p.as_ptr(),
         None => null_mut(),
     }
@@ -103,7 +100,7 @@ pub extern "C" fn free(ptr: *mut c_void) {
         None => return,
     };
 
-    unsafe { alloc::dealloc(ptr) };
+    unsafe { COLLAM.dealloc_unchecked(ptr) };
 }
 
 #[cfg(not(test))]
