@@ -22,6 +22,7 @@ pub struct Collam {
 }
 
 impl Collam {
+    #[allow(unused)]
     pub const fn new() -> Self {
         Collam {
             heap: spin::Mutex::new(IntrusiveList::new()),

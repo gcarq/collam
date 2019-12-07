@@ -18,15 +18,15 @@ The overhead for each use allocated block is 16 bytes whereas only 12 bytes of t
 In regards of memory usage/overhead it is comparable to dlmalloc with tested applications,
 however the performance is not there yet.
 
-## Using collam
+## Testing collam in C/POSIX environment
 Make sure you have Rust nightly.
 Manually overwrite default allocator:
-```
-$ cargo build --release
+```bash
+$ cargo build --features posix --release
 $ LD_PRELOAD="$(pwd)/target/release/libcollam.so" kwrite
 ```
 Or use the test script in the root folder:
-```
+```bash
 $ ./test.sh kwrite
 ```
 There are some more helper scripts, see `debug.sh`, `perf.sh` and `report.sh`.
@@ -34,8 +34,8 @@ There are some more helper scripts, see `debug.sh`, `perf.sh` and `report.sh`.
 
 ## Execute tests
 Tests are not thread safe, make sure to force 1 thread only!
-```
-$ cargo test -- --test-threads 1
+```bash
+$ cargo test --all-features -- --test-threads 1
 ```
 
 ## TODO:

@@ -9,7 +9,14 @@ name = "collam"
 crate-type = ["cdylib"]
 
 [features]
+# Exposes malloc, calloc, realloc, free and mallopt.
+# See https://linux.die.net/man/3/malloc
+posix = []
+# Enables debug assertions and trace logs.
+# Should only be used during development!
 debug = []
+# Enables statistics printing.
+# Should only be used during development!
 stats = []
 
 [dependencies]

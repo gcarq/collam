@@ -15,7 +15,7 @@ rm -rf ${TMP_DIR}
 mkdir -p ${TMP_DIR}
 
 # Build everything
-cargo build --release
+cargo build --features posix --release
 gcc test.c -o ${TMP_DIR}/test
 
 # Start debugger
