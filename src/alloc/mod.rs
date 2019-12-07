@@ -1,5 +1,5 @@
 use core::alloc::{GlobalAlloc, Layout};
-use core::{cmp, ffi::c_void, intrinsics, ptr::Unique};
+use core::{cmp, ffi::c_void, intrinsics, ptr::null_mut, ptr::Unique};
 
 use libc_print::libc_eprintln;
 
@@ -8,7 +8,6 @@ use crate::alloc::list::IntrusiveList;
 #[cfg(feature = "stats")]
 use crate::stats;
 use crate::util;
-use core::ptr::null_mut;
 
 pub mod block;
 mod list;
@@ -74,50 +73,6 @@ impl Collam {
         Some(block)
     }
 
-    /// Find a usable memory region for the given size either by
-    /// reusing or requesting memory from the kernel.
-    /// Returns a `Unique<c_void>` pointer to the memory region.
-    pub unsafe fn _alloc(&self, layout: Layout) -> Option<Unique<c_void>> {
-        if layout.size() == 0 {
-            return None;
-        }
-
-        debug_assert_eq!(
-            layout.size(),
-            layout.pad_to_align().expect("unable to align").size()
-        );
-
-        dprintln!("[libcollam.so]: alloc(size={})", layout.size());
-
-        // Check if there is already a suitable block allocated
-        let mut block = if let Some(block) = self.pop(layout.size()) {
-            block
-        // Request new block from kernel
-        } else if let Some(block) = request_block(layout.size()) {
-            block
-        } else {
-            dprintln!("[libcollam.so]: failed for size: {}\n", layout.size());
-            return None;
-        };
-
-        if let Some(rem_block) = block.shrink(layout.size()) {
-            self.insert(rem_block);
-        }
-
-        dprintln!(
-            "[libcollam.so]: returning {} at {:p}\n",
-            block.as_ref(),
-            block
-        );
-        debug_assert!(
-            block.size() >= layout.size(),
-            "requested_size={}, got_block={}",
-            layout.size(),
-            block.as_ref()
-        );
-        Some(block.mem_region())
-    }
-
     #[inline]
     pub unsafe fn dealloc_unchecked(&self, ptr: Unique<c_void>) {
         let block = match BlockPtr::from_mem_region(ptr) {
@@ -158,22 +113,58 @@ impl Collam {
         }
 
         // Allocate new region to fit size.
-        let new_ptr = self._alloc(new_layout)?;
-
+        let new_ptr = self.alloc(new_layout).cast::<c_void>();
         let copy_size = cmp::min(new_layout.size(), old_block_size);
-        intrinsics::volatile_copy_nonoverlapping_memory(new_ptr.as_ptr(), ptr.as_ptr(), copy_size);
+        intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
         // Add old block back to heap structure.
         self.insert(old_block);
-        Some(new_ptr)
+        Some(Unique::new_unchecked(new_ptr))
     }
 }
 
 unsafe impl GlobalAlloc for Collam {
+    /// Find a usable memory region for the given size either by
+    /// reusing or requesting memory from the kernel.
+    /// Returns a `Unique<c_void>` pointer to the memory region.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        match self._alloc(layout) {
-            Some(p) => p.cast::<u8>().as_ptr(),
-            None => null_mut(),
+        if layout.size() == 0 {
+            return null_mut();
         }
+
+        debug_assert_eq!(
+            layout.size(),
+            layout.pad_to_align().expect("unable to align").size()
+        );
+
+        dprintln!("[libcollam.so]: alloc(size={})", layout.size());
+
+        // Check if there is already a suitable block allocated
+        let mut block = if let Some(block) = self.pop(layout.size()) {
+            block
+        // Request new block from kernel
+        } else if let Some(block) = request_block(layout.size()) {
+            block
+        } else {
+            dprintln!("[libcollam.so]: failed for size: {}\n", layout.size());
+            return null_mut();
+        };
+
+        if let Some(rem_block) = block.shrink(layout.size()) {
+            self.insert(rem_block);
+        }
+
+        dprintln!(
+            "[libcollam.so]: returning {} at {:p}\n",
+            block.as_ref(),
+            block
+        );
+        debug_assert!(
+            block.size() >= layout.size(),
+            "requested_size={}, got_block={}",
+            layout.size(),
+            block.as_ref()
+        );
+        block.mem_region().cast::<u8>().as_ptr()
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
@@ -183,14 +174,11 @@ unsafe impl GlobalAlloc for Collam {
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = match self._alloc(layout) {
-            Some(p) => p,
-            None => return null_mut(),
-        };
+        let ptr = self.alloc(layout).cast::<c_void>();
 
         // Initialize memory region with 0.
-        intrinsics::volatile_set_memory(ptr.as_ptr(), 0, layout.size());
-        ptr.cast::<u8>().as_ptr()
+        intrinsics::volatile_set_memory(ptr, 0, layout.size());
+        ptr.cast::<u8>()
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8 {

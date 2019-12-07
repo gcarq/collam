@@ -38,10 +38,7 @@ pub extern "C" fn malloc(size: usize) -> *mut c_void {
         Err(_) => return null_mut(),
     };
 
-    match unsafe { COLLAM._alloc(layout) } {
-        Some(p) => p.as_ptr(),
-        None => null_mut(),
-    }
+    unsafe { COLLAM.alloc(layout).cast::<c_void>() }
 }
 
 #[cfg(not(test))]
@@ -71,10 +68,7 @@ pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
             Err(_) => return null_mut(),
         };
 
-        return match unsafe { COLLAM._alloc(layout) } {
-            Some(p) => p.as_ptr(),
-            None => null_mut(),
-        };
+        return unsafe { COLLAM.alloc(layout).cast::<c_void>() };
     }
 
     let ptr = unsafe { Unique::new_unchecked(p) };
