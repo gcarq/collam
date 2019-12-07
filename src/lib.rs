@@ -46,7 +46,13 @@ pub extern "C" fn malloc(size: usize) -> *mut c_void {
 pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     let total_size = match nobj.checked_mul(size) {
         Some(x) => x,
-        None => panic!("integer overflow detected (nobj={}, size={})", nobj, size),
+        None => {
+            eprintln!(
+                "integer overflow detected for calloc(nobj={}, size={})",
+                nobj, size
+            );
+            return null_mut();
+        }
     };
 
     let layout = match util::pad_to_scalar(total_size) {

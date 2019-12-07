@@ -27,9 +27,9 @@ impl Collam {
         }
     }
 
-    /// Inserts a `BlockPtr` to the heap structure.
+    /// Releases the given `BlockPtr` back to the allocator.
     /// NOTE: The memory is returned to the OS if it is adjacent to program break.
-    unsafe fn insert(&self, block: BlockPtr) {
+    unsafe fn release_block(&self, block: BlockPtr) {
         // Lock heap for the whole function
         let mut heap = self.heap.lock();
 
@@ -90,7 +90,7 @@ impl Collam {
             return;
         }
         // Add freed block back to heap structure.
-        self.insert(block)
+        self.release_block(block)
     }
 
     pub unsafe fn _realloc(&self, ptr: Unique<c_void>, new_size: usize) -> Option<Unique<c_void>> {
@@ -100,7 +100,12 @@ impl Collam {
 
         let mut old_block = BlockPtr::from_mem_region(ptr)?;
         if !old_block.verify() {
-            panic!("Unable to verify {} at {:p}", old_block.as_ref(), old_block);
+            eprintln!(
+                "realloc(): Unable to verify {} at {:p}",
+                old_block.as_ref(),
+                old_block
+            );
+            return None;
         }
 
         let old_block_size = old_block.size();
@@ -108,7 +113,7 @@ impl Collam {
         // Shrink allocated block if size is smaller.
         if new_layout.size() < old_block_size {
             if let Some(rem_block) = old_block.shrink(new_layout.size()) {
-                self.insert(rem_block);
+                self.release_block(rem_block);
             }
             return Some(ptr);
         }
@@ -123,7 +128,7 @@ impl Collam {
         let copy_size = cmp::min(new_layout.size(), old_block_size);
         intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
         // Add old block back to heap structure.
-        self.insert(old_block);
+        self.release_block(old_block);
         Some(Unique::new_unchecked(new_ptr))
     }
 }
@@ -152,7 +157,7 @@ unsafe impl GlobalAlloc for Collam {
         };
 
         if let Some(rem_block) = block.shrink(layout.size()) {
-            self.insert(rem_block);
+            self.release_block(rem_block);
         }
 
         dprintln!(
