@@ -1,6 +1,6 @@
 use libc_print::libc_eprintln;
 
-use crate::heap::block::{BlockPtr, BLOCK_MIN_SIZE};
+use crate::alloc::block::{BlockPtr, BLOCK_MIN_SIZE};
 
 #[repr(C)]
 pub struct IntrusiveList {
@@ -234,8 +234,8 @@ impl Iterator for Iter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::heap::block::BLOCK_META_SIZE;
-    use crate::heap::request_block;
+    use crate::alloc::block::BLOCK_META_SIZE;
+    use crate::alloc::request_block;
 
     #[test]
     fn test_insert_after_no_merge() {
