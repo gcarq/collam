@@ -1,4 +1,5 @@
 use core::alloc::{GlobalAlloc, Layout};
+use core::intrinsics::unlikely;
 use core::{cmp, ffi::c_void, intrinsics, ptr::null_mut, ptr::Unique};
 
 use libc_print::libc_eprintln;
@@ -8,7 +9,6 @@ use crate::alloc::list::IntrusiveList;
 #[cfg(feature = "stats")]
 use crate::stats;
 use crate::util;
-use core::intrinsics::unlikely;
 
 pub mod block;
 mod list;
@@ -26,6 +26,21 @@ impl Collam {
         Collam {
             heap: spin::Mutex::new(IntrusiveList::new()),
         }
+    }
+
+    /// Reserves and returns suitable empty `BlockPtr`.
+    /// This can be either a reused empty block or a new one requested from kernel.
+    unsafe fn reserve_block(&self, size: usize) -> Option<BlockPtr> {
+        // Locking this whole function is critical since break will be increased!
+        let mut heap = self.heap.lock();
+
+        // Check for reusable blocks.
+        if let Some(block) = (*heap).pop(size) {
+            dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
+            return Some(block);
+        }
+        // Request new block from kernel
+        request_block(size)
     }
 
     /// Releases the given `BlockPtr` back to the allocator.
@@ -63,67 +78,9 @@ impl Collam {
             eprintln!("double free detected for ptr {:?}", block.mem_region());
         }
     }
-
-    /// Reserves and returns suitable empty `BlockPtr`.
-    /// This can be either a reused empty block or a new one requested from kernel.
-    #[inline]
-    unsafe fn reserve_block(&self, size: usize) -> Option<BlockPtr> {
-        // Locking this whole function is critical since break will be increased!
-        let mut heap = self.heap.lock();
-
-        // Check for reusable blocks.
-        if let Some(block) = (*heap).pop(size) {
-            dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
-            return Some(block);
-        }
-        // Request new block from kernel
-        request_block(size)
-    }
-
-    pub unsafe fn _realloc(&self, ptr: Unique<c_void>, new_size: usize) -> Option<Unique<c_void>> {
-        // Align to old layout, FIXME: needed?
-        //let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
-        let new_layout = util::pad_to_scalar(new_size).ok()?;
-
-        let mut old_block = BlockPtr::from_mem_region(ptr)?;
-        if unlikely(!old_block.verify()) {
-            eprintln!(
-                "realloc(): Unable to verify {} at {:p}",
-                old_block.as_ref(),
-                old_block
-            );
-            return None;
-        }
-
-        let old_block_size = old_block.size();
-
-        // Shrink allocated block if size is smaller.
-        if new_layout.size() < old_block_size {
-            if let Some(rem_block) = old_block.shrink(new_layout.size()) {
-                self.release_block(rem_block);
-            }
-            return Some(ptr);
-        }
-
-        // Just return pointer if size didn't change.
-        if new_layout.size() == old_block_size {
-            return Some(ptr);
-        }
-
-        // Allocate new region to fit size.
-        let new_ptr = self.alloc(new_layout).cast::<c_void>();
-        let copy_size = cmp::min(new_layout.size(), old_block_size);
-        intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
-        // Add old block back to heap structure.
-        self.release_block(old_block);
-        Some(Unique::new_unchecked(new_ptr))
-    }
 }
 
 unsafe impl GlobalAlloc for Collam {
-    /// Find a usable memory region for the given size either by
-    /// reusing or requesting memory from the kernel.
-    /// Returns a `Unique<c_void>` pointer to the memory region.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if layout.size() == 0 {
             return null_mut();
@@ -176,24 +133,52 @@ unsafe impl GlobalAlloc for Collam {
         }
     }
 
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = self.alloc(layout).cast::<c_void>();
-
-        // Initialize memory region with 0.
-        intrinsics::volatile_set_memory(ptr, 0, layout.size());
-        ptr.cast::<u8>()
-    }
-
     unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8 {
         let ptr = match Unique::new(ptr) {
             Some(p) => p.cast::<c_void>(),
             None => return null_mut(),
         };
 
-        match self._realloc(ptr, new_size) {
-            Some(p) => p.cast::<u8>().as_ptr(),
-            None => null_mut(),
+        // FIXME: Alignment  to old layout needed?
+        let new_layout = match util::pad_to_scalar(new_size) {
+            Ok(l) => l,
+            Err(_) => return null_mut(),
+        };
+
+        let mut old_block = match BlockPtr::from_mem_region(ptr) {
+            Some(b) => b,
+            None => return null_mut(),
+        };
+
+        if unlikely(!old_block.verify()) {
+            eprintln!(
+                "realloc(): Unable to verify {} at {:p}",
+                old_block.as_ref(),
+                old_block
+            );
+            return null_mut();
         }
+
+        // Shrink allocated block if size is smaller.
+        if new_layout.size() < old_block.size() {
+            if let Some(rem_block) = old_block.shrink(new_layout.size()) {
+                self.release_block(rem_block);
+            }
+            return ptr.cast::<u8>().as_ptr();
+        }
+
+        // Just return pointer if size didn't change.
+        if new_layout.size() == old_block.size() {
+            return ptr.cast::<u8>().as_ptr();
+        }
+
+        // Allocate new region to fit size.
+        let new_ptr = self.alloc(new_layout).cast::<c_void>();
+        let copy_size = cmp::min(new_layout.size(), old_block.size());
+        intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
+        // Add old block back to heap structure.
+        self.release_block(old_block);
+        new_ptr.cast::<u8>()
     }
 }
 

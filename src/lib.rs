@@ -20,9 +20,10 @@ use core::intrinsics::unlikely;
 use core::ptr::{null_mut, Unique};
 use core::{alloc::GlobalAlloc, ffi::c_void, intrinsics, panic};
 
+use libc_print::libc_eprintln;
+
 use crate::alloc::{block::BlockPtr, Collam};
 use core::alloc::Layout;
-use libc_print::libc_eprintln;
 
 mod macros;
 mod alloc;
@@ -34,18 +35,18 @@ static mut COLLAM: Collam = Collam::new();
 
 #[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn malloc(size: usize) -> *mut c_void {
+pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
     let layout = match util::pad_to_scalar(size) {
         Ok(l) => l,
         Err(_) => return null_mut(),
     };
 
-    unsafe { COLLAM.alloc(layout).cast::<c_void>() }
+    COLLAM.alloc(layout).cast::<c_void>()
 }
 
 #[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
+pub unsafe extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
     let total_size = match nobj.checked_mul(size) {
         Some(x) => x,
         None => {
@@ -62,55 +63,53 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
         Err(_) => return null_mut(),
     };
 
-    unsafe { COLLAM.alloc_zeroed(layout).cast::<c_void>() }
+    COLLAM.alloc_zeroed(layout).cast::<c_void>()
 }
 
 #[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
+pub unsafe extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size.
         return match util::pad_to_scalar(size) {
-            Ok(layout) => unsafe { COLLAM.alloc(layout).cast::<c_void>() },
+            Ok(layout) => COLLAM.alloc(layout).cast::<c_void>(),
             Err(_) => null_mut(),
         };
     }
 
-    let ptr = unsafe { Unique::new_unchecked(p) };
+    let p = p.cast::<u8>();
     if size == 0 {
         // If size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr).
-        let layout = unsafe { Layout::from_size_align_unchecked(0, 16) };
-        unsafe { COLLAM.dealloc(p.cast::<u8>(), layout) };
-        return null_mut();
-    }
-
-    match unsafe { COLLAM._realloc(ptr, size) } {
-        Some(p) => p.as_ptr(),
-        None => null_mut(),
+        let layout = Layout::from_size_align_unchecked(0, 16);
+        COLLAM.dealloc(p, layout);
+        null_mut()
+    } else {
+        let layout = Layout::from_size_align_unchecked(0, 16);
+        COLLAM.realloc(p, layout, size).cast::<c_void>()
     }
 }
 
 #[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn free(ptr: *mut c_void) {
-    let layout = unsafe { Layout::from_size_align_unchecked(0, 16) };
-    unsafe { COLLAM.dealloc(ptr.cast::<u8>(), layout) };
+pub unsafe extern "C" fn free(ptr: *mut c_void) {
+    let layout = Layout::from_size_align_unchecked(0, 16);
+    COLLAM.dealloc(ptr.cast::<u8>(), layout)
 }
 
 #[cfg(not(test))]
 #[no_mangle]
-pub extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
+pub unsafe extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
     if ptr.is_null() {
         return 0;
     }
 
     // Its safe to use Unique_unchecked since we already checked for null pointers.
-    let block = match BlockPtr::from_mem_region(unsafe { Unique::new_unchecked(ptr) }) {
+    let block = match BlockPtr::from_mem_region(Unique::new_unchecked(ptr)) {
         Some(b) => b,
         None => return 0,
     };
-    if unsafe { unlikely(!block.verify()) } {
+    if unlikely(!block.verify()) {
         eprintln!(
             "malloc_usable_size(): Unable to verify {} at {:p}",
             block.as_ref(),
