@@ -16,6 +16,7 @@ extern crate spin;
 #[macro_use]
 extern crate std;
 
+use core::intrinsics::unlikely;
 use core::ptr::{null_mut, Unique};
 use core::{alloc::GlobalAlloc, ffi::c_void, intrinsics, panic};
 
@@ -111,7 +112,7 @@ pub extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
         Some(b) => b,
         None => return 0,
     };
-    if !block.verify() {
+    if unsafe { unlikely(!block.verify()) } {
         eprintln!(
             "malloc_usable_size(): Unable to verify {} at {:p}",
             block.as_ref(),

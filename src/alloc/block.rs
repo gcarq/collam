@@ -60,7 +60,7 @@ impl BlockPtr {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn unlink(&mut self) {
         self.as_mut().next = None;
         self.as_mut().prev = None;

@@ -1,5 +1,6 @@
 use core::alloc::{Layout, LayoutErr};
 use core::ffi::c_void;
+use core::intrinsics::unlikely;
 use core::mem::align_of;
 use core::ptr::Unique;
 
@@ -9,7 +10,7 @@ use crate::stats;
 #[inline]
 pub fn sbrk(size: isize) -> Option<Unique<c_void>> {
     let ptr = unsafe { libc::sbrk(size) };
-    if ptr == -1_isize as *mut c_void {
+    if unsafe { unlikely(ptr == -1_isize as *mut c_void) } {
         return None;
     }
     #[cfg(feature = "stats")]

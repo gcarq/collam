@@ -1,6 +1,7 @@
 use libc_print::libc_eprintln;
 
 use crate::alloc::block::{BlockPtr, BLOCK_MIN_SIZE};
+use core::intrinsics::unlikely;
 
 #[repr(C)]
 pub struct IntrusiveList {
@@ -18,12 +19,12 @@ impl IntrusiveList {
 
     /// Inserts a `BlockPtr` to the existing list and
     /// returns `Err` on detected double-free.
-    pub fn insert(&mut self, mut to_insert: BlockPtr) -> Result<(), ()> {
+    pub unsafe fn insert(&mut self, mut to_insert: BlockPtr) -> Result<(), ()> {
         // Reset pointer locations since they were part as user allocatable data
         to_insert.unlink();
 
         // Add initial element
-        if self.head.is_none() {
+        if unlikely(self.head.is_none()) {
             debug_assert!(self.tail.is_none());
             self.head = Some(to_insert);
             self.tail = Some(to_insert);
@@ -33,14 +34,12 @@ impl IntrusiveList {
         debug_assert!(self.head.is_some());
         debug_assert!(self.tail.is_some());
 
-        unsafe {
-            match self.find_higher_block(to_insert)? {
-                Some(block) => IntrusiveList::insert_before(block, to_insert),
-                None => IntrusiveList::insert_after(self.tail.unwrap(), to_insert),
-            }
-            let inserted = IntrusiveList::maybe_merge_adjacent(to_insert);
-            self.update_ends(inserted);
+        match self.find_higher_block(to_insert)? {
+            Some(block) => IntrusiveList::insert_before(block, to_insert),
+            None => IntrusiveList::insert_after(self.tail.unwrap(), to_insert),
         }
+        let inserted = IntrusiveList::maybe_merge_adjacent(to_insert);
+        self.update_ends(inserted);
         Ok(())
     }
 
@@ -172,13 +171,13 @@ impl IntrusiveList {
     #[inline]
     fn find_higher_block(&self, to_insert: BlockPtr) -> Result<Option<BlockPtr>, ()> {
         for block in self.iter() {
+            if block.as_ptr() > to_insert.as_ptr() {
+                return Ok(Some(block));
+            }
             if block == to_insert {
                 // block is already in list.
                 // One reason for this is double free()
                 return Err(());
-            }
-            if block.as_ptr() > to_insert.as_ptr() {
-                return Ok(Some(block));
             }
         }
         Ok(None)
@@ -249,14 +248,14 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        list.insert(block).expect("unable to insert");
+        unsafe { list.insert(block).expect("unable to insert") };
         assert_eq!(list.head, Some(block));
         assert_eq!(list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
         assert_eq!(block.as_ref().prev, None);
 
         // Insert block3
-        list.insert(block3).expect("unable to insert");
+        unsafe { list.insert(block3).expect("unable to insert") };
         assert_eq!(list.head, Some(block));
         assert_eq!(list.tail, Some(block3));
         assert_eq!(block.as_ref().next, Some(block3));
@@ -277,14 +276,14 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block3
-        list.insert(block3).expect("unable to insert");
+        unsafe { list.insert(block3).expect("unable to insert") };
         assert_eq!(list.head, Some(block3));
         assert_eq!(list.tail, Some(block3));
         assert_eq!(block3.as_ref().next, None);
         assert_eq!(block3.as_ref().prev, None);
 
         // Insert block1
-        list.insert(block).expect("unable to insert");
+        unsafe { list.insert(block).expect("unable to insert") };
         assert_eq!(list.head, Some(block));
         assert_eq!(list.tail, Some(block3));
         assert_eq!(block.as_ref().next, Some(block3));
@@ -304,7 +303,7 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        list.insert(block).expect("unable to insert");
+        unsafe { list.insert(block).expect("unable to insert") };
         assert_eq!(list.head, Some(block));
         assert_eq!(list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
@@ -312,7 +311,7 @@ mod tests {
         assert_eq!(block.size(), 64);
 
         // Insert block2
-        list.insert(block2).expect("unable to insert");
+        unsafe { list.insert(block2).expect("unable to insert") };
         assert_eq!(list.head, Some(block));
         assert_eq!(list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
@@ -320,7 +319,7 @@ mod tests {
         assert_eq!(block.size(), 64 + BLOCK_META_SIZE + 64);
 
         // Insert block3
-        list.insert(block3).expect("unable to insert");
+        unsafe { list.insert(block3).expect("unable to insert") };
         assert_eq!(list.head, Some(block));
         assert_eq!(list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
@@ -337,9 +336,9 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        list.insert(block).expect("unable to insert");
+        unsafe { list.insert(block).expect("unable to insert") };
         // Insert block3
-        list.insert(block3).expect("unable to insert");
+        unsafe { list.insert(block3).expect("unable to insert") };
 
         let result = list.pop(64).expect("got no block");
         assert_eq!(result, block);
@@ -357,9 +356,9 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        list.insert(block).expect("unable to insert");
+        unsafe { list.insert(block).expect("unable to insert") };
         // Insert block3
-        list.insert(block3).expect("unable to insert");
+        unsafe { list.insert(block3).expect("unable to insert") };
 
         let result = list.pop(16).expect("got no block");
         assert_eq!(result, block);
@@ -376,9 +375,9 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        list.insert(block).expect("unable to insert");
+        unsafe { list.insert(block).expect("unable to insert") };
         // Insert block3
-        list.insert(block3).expect("unable to insert");
+        unsafe { list.insert(block3).expect("unable to insert") };
 
         let mut iter = list.iter();
         assert_eq!(iter.next().unwrap(), block);
@@ -396,9 +395,9 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        list.insert(block).expect("unable to insert");
+        unsafe { list.insert(block).expect("unable to insert") };
         // Insert block3
-        list.insert(block3).expect("unable to insert");
+        unsafe { list.insert(block3).expect("unable to insert") };
         list.debug()
     }
 }

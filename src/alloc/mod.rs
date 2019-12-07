@@ -8,6 +8,7 @@ use crate::alloc::list::IntrusiveList;
 #[cfg(feature = "stats")]
 use crate::stats;
 use crate::util;
+use core::intrinsics::unlikely;
 
 pub mod block;
 mod list;
@@ -85,7 +86,7 @@ impl Collam {
             Some(b) => b,
             None => return,
         };
-        if !block.verify() {
+        if unlikely(!block.verify()) {
             eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
             return;
         }
@@ -99,7 +100,7 @@ impl Collam {
         let new_layout = util::pad_to_scalar(new_size).ok()?;
 
         let mut old_block = BlockPtr::from_mem_region(ptr)?;
-        if !old_block.verify() {
+        if unlikely(!old_block.verify()) {
             eprintln!(
                 "realloc(): Unable to verify {} at {:p}",
                 old_block.as_ref(),
