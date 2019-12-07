@@ -63,14 +63,20 @@ impl Collam {
         }
     }
 
-    /// Removes and returns a suitable empty `BlockPtr` from the heap structure.
+    /// Reserves and returns suitable empty `BlockPtr`.
+    /// This can be either a reused empty block or a new one requested from kernel.
     #[inline]
-    unsafe fn pop(&self, size: usize) -> Option<BlockPtr> {
-        // Lock heap for the whole function
+    unsafe fn reserve_block(&self, size: usize) -> Option<BlockPtr> {
+        // Locking this whole function is critical since break will be increased!
         let mut heap = self.heap.lock();
-        let block = (*heap).pop(size)?;
-        dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
-        Some(block)
+
+        // Check for reusable blocks.
+        if let Some(block) = (*heap).pop(size) {
+            dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
+            return Some(block);
+        }
+        // Request new block from kernel
+        request_block(size)
     }
 
     #[inline]
@@ -137,16 +143,12 @@ unsafe impl GlobalAlloc for Collam {
         );
 
         dprintln!("[libcollam.so]: alloc(size={})", layout.size());
-
-        // Check if there is already a suitable block allocated
-        let mut block = if let Some(block) = self.pop(layout.size()) {
-            block
-        // Request new block from kernel
-        } else if let Some(block) = request_block(layout.size()) {
-            block
-        } else {
-            dprintln!("[libcollam.so]: failed for size: {}\n", layout.size());
-            return null_mut();
+        let mut block = match self.reserve_block(layout.size()) {
+            Some(b) => b,
+            None => {
+                dprintln!("[libcollam.so]: failed for size: {}\n", layout.size());
+                return null_mut();
+            }
         };
 
         if let Some(rem_block) = block.shrink(layout.size()) {

@@ -62,17 +62,13 @@ pub extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 pub extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size.
-
-        let layout = match util::pad_to_scalar(size) {
-            Ok(l) => l,
-            Err(_) => return null_mut(),
+        return match util::pad_to_scalar(size) {
+            Ok(layout) => unsafe { COLLAM.alloc(layout).cast::<c_void>() },
+            Err(_) => null_mut(),
         };
-
-        return unsafe { COLLAM.alloc(layout).cast::<c_void>() };
     }
 
     let ptr = unsafe { Unique::new_unchecked(p) };
-
     if size == 0 {
         // If size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr).
