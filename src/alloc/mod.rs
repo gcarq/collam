@@ -246,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn test_collam_realloc_ok() {
+    fn test_collam_realloc_bigger_size() {
         unsafe {
             let collam = Collam::new();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
@@ -255,6 +255,34 @@ mod tests {
 
             let ptr = collam.realloc(ptr, layout, 789);
             write_bytes(ptr, 2, 789);
+            collam.dealloc(ptr, layout);
+        }
+    }
+
+    #[test]
+    fn test_collam_realloc_smaller_size() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(512).expect("unable to align layout");
+            let ptr = collam.alloc(layout);
+            assert!(!ptr.is_null());
+
+            let ptr = collam.realloc(ptr, layout, 128);
+            write_bytes(ptr, 2, 128);
+            collam.dealloc(ptr, layout);
+        }
+    }
+
+    #[test]
+    fn test_collam_realloc_same_size() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(512).expect("unable to align layout");
+            let ptr = collam.alloc(layout);
+            assert!(!ptr.is_null());
+            let ptr2 = collam.realloc(ptr, layout, 512);
+            assert!(!ptr2.is_null());
+            assert_eq!(ptr, ptr2);
             collam.dealloc(ptr, layout);
         }
     }
@@ -279,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn test_collam_memory_corruption() {
+    fn test_collam_realloc_memory_corruption() {
         unsafe {
             let collam = Collam::new();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
@@ -297,6 +325,21 @@ mod tests {
             // Calling alloc again. We expect to get a new block, the old memory is leaked.
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
+            collam.dealloc(ptr, layout);
+        }
+    }
+
+    #[test]
+    fn test_collam_dealloc_memory_corruption() {
+        unsafe {
+            let collam = Collam::new();
+            let layout = util::pad_to_scalar(32).expect("unable to align layout");
+            let ptr = collam.alloc(layout);
+            assert!(!ptr.is_null());
+
+            // Overwrite block metadata to simulate memory corruption
+            let meta_ptr = ptr.offset(-(BLOCK_META_SIZE as isize));
+            meta_ptr.write_bytes(0, BLOCK_META_SIZE);
             collam.dealloc(ptr, layout);
         }
     }
