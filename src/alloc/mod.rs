@@ -87,10 +87,10 @@ unsafe impl GlobalAlloc for Collam {
             return null_mut();
         }
 
-        debug_assert_eq!(
-            layout.size(),
-            layout.pad_to_align().expect("unable to align").size()
-        );
+        let layout = match util::pad_to_scalar(layout.size()) {
+            Ok(l) => l,
+            Err(_) => return null_mut(),
+        };
 
         dprintln!("[libcollam.so]: alloc(size={})", layout.size());
         let mut block = match self.reserve_block(layout.size()) {

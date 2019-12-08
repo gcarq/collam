@@ -1,21 +1,16 @@
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::{null_mut, Unique};
-use core::{ffi::c_void, intrinsics::unlikely};
+use core::{ffi::c_void, intrinsics::unlikely, mem};
 
 use libc_print::libc_eprintln;
 
 use crate::alloc::{block::BlockPtr, Collam};
-use crate::util;
 
 static mut COLLAM: Collam = Collam::new();
 
 #[no_mangle]
 pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
-    let layout = match util::pad_to_scalar(size) {
-        Ok(l) => l,
-        Err(_) => return null_mut(),
-    };
-
+    let layout = Layout::from_size_align_unchecked(size, mem::align_of::<libc::max_align_t>());
     COLLAM.alloc(layout).cast::<c_void>()
 }
 
@@ -31,12 +26,8 @@ pub unsafe extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
             return null_mut();
         }
     };
-
-    let layout = match util::pad_to_scalar(total_size) {
-        Ok(l) => l,
-        Err(_) => return null_mut(),
-    };
-
+    let layout =
+        Layout::from_size_align_unchecked(total_size, mem::align_of::<libc::max_align_t>());
     COLLAM.alloc_zeroed(layout).cast::<c_void>()
 }
 
@@ -44,28 +35,26 @@ pub unsafe extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 pub unsafe extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size.
-        return match util::pad_to_scalar(size) {
-            Ok(layout) => COLLAM.alloc(layout).cast::<c_void>(),
-            Err(_) => null_mut(),
-        };
+        let layout = Layout::from_size_align_unchecked(size, mem::align_of::<libc::max_align_t>());
+        return COLLAM.alloc(layout).cast::<c_void>();
     }
 
     let p = p.cast::<u8>();
+    let layout = Layout::from_size_align_unchecked(0, mem::align_of::<libc::max_align_t>());
+
     if size == 0 {
         // If size is equal to zero, and ptr is not NULL,
         // then the call is equivalent to free(ptr).
-        let layout = Layout::from_size_align_unchecked(0, 16);
         COLLAM.dealloc(p, layout);
         null_mut()
     } else {
-        let layout = Layout::from_size_align_unchecked(0, 16);
         COLLAM.realloc(p, layout, size).cast::<c_void>()
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn free(ptr: *mut c_void) {
-    let layout = Layout::from_size_align_unchecked(0, 16);
+    let layout = Layout::from_size_align_unchecked(0, mem::align_of::<libc::max_align_t>());
     COLLAM.dealloc(ptr.cast::<u8>(), layout)
 }
 
