@@ -21,9 +21,9 @@ use core::{intrinsics, panic};
 use libc_print::libc_eprintln;
 
 mod macros;
-mod alloc;
+pub mod alloc;
 #[cfg(all(feature = "posix", not(test)))]
-mod posix;
+pub mod posix;
 #[cfg(feature = "stats")]
 mod stats;
 mod util;

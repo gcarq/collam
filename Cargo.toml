@@ -6,7 +6,7 @@ edition = "2018"
 
 [lib]
 name = "collam"
-crate-type = ["cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [features]
 # Exposes malloc, calloc, realloc, free and mallopt.
