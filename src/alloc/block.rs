@@ -41,21 +41,15 @@ impl BlockPtr {
     /// Returns an existing `BlockPtr` instance from the given memory region raw pointer
     #[inline]
     pub fn from_mem_region(ptr: Unique<c_void>) -> Option<Self> {
-        let offset = BLOCK_META_SIZE as isize;
-        Some(BlockPtr(Unique::new(unsafe {
-            ptr.as_ptr().offset(-offset).cast::<Block>()
-        })?))
+        let block_ptr = unsafe { ptr.as_ptr().sub(BLOCK_META_SIZE).cast::<Block>() };
+        Some(BlockPtr(Unique::new(block_ptr)?))
     }
 
     /// Returns a pointer to the assigned memory region for the given block
     #[inline]
-    pub unsafe fn mem_region(&self) -> Unique<c_void> {
+    pub fn mem_region(self) -> Unique<c_void> {
         debug_assert!(self.verify());
-        Unique::new_unchecked(
-            self.as_ptr()
-                .cast::<c_void>()
-                .offset(BLOCK_META_SIZE as isize),
-        )
+        unsafe { Unique::new_unchecked(self.as_ptr().cast::<c_void>().add(BLOCK_META_SIZE)) }
     }
 
     #[inline(always)]
@@ -78,26 +72,25 @@ impl BlockPtr {
 
     /// Returns a pointer where the next `Block` would start.
     #[inline]
-    pub fn next_potential_block(&self) -> Unique<c_void> {
-        let offset = self.block_size() as isize;
-        unsafe { Unique::new_unchecked(self.cast::<c_void>().as_ptr().offset(offset)) }
+    pub fn next_potential_block(self) -> Unique<c_void> {
+        unsafe { Unique::new_unchecked(self.cast::<c_void>().as_ptr().add(self.block_size())) }
     }
 
     /// Returns the allocatable size available for the user
     #[inline(always)]
-    pub fn size(&self) -> usize {
+    pub fn size(self) -> usize {
         self.as_ref().size
     }
 
     /// Returns the raw size in memory for this block.
     #[inline(always)]
-    pub fn block_size(&self) -> usize {
+    pub fn block_size(self) -> usize {
         BLOCK_META_SIZE + self.size()
     }
 
     /// Tries to merge self with the next block, if available.
     /// Returns a merged `BlockPtr` if merge was possible, `None` otherwise.
-    pub unsafe fn maybe_merge_next(mut self) -> Option<BlockPtr> {
+    pub fn maybe_merge_next(mut self) -> Option<BlockPtr> {
         let next = self.as_ref().next?;
 
         if self.next_potential_block().as_ptr() != next.cast::<c_void>().as_ptr() {
@@ -115,7 +108,9 @@ impl BlockPtr {
         self.as_mut().size += BLOCK_META_SIZE + next.size();
 
         // Overwrite block meta data for old block to detect double free
-        intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_META_SIZE);
+        unsafe {
+            intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_META_SIZE)
+        };
 
         dprintln!("      -> {} at {:p}", self.as_ref(), self);
         Some(self)
@@ -141,8 +136,7 @@ impl BlockPtr {
         self.as_mut().size = size;
 
         // Create block with remaining size
-        let new_block_ptr =
-            unsafe { Unique::new_unchecked(self.mem_region().as_ptr().offset(size as isize)) };
+        let new_block_ptr = unsafe { Unique::new_unchecked(self.mem_region().as_ptr().add(size)) };
         let new_block = BlockPtr::new(new_block_ptr, rem_block_size);
 
         dprintln!("      -> {} at {:p}", self.as_ref(), self);
@@ -161,7 +155,7 @@ impl BlockPtr {
     /// Verifies block to detect memory corruption.
     /// Returns `true` if block metadata is intact, `false` otherwise.
     #[inline(always)]
-    pub fn verify(&self) -> bool {
+    pub fn verify(self) -> bool {
         self.as_ref().magic == BLOCK_MAGIC_FREE
     }
 }
@@ -340,7 +334,7 @@ mod tests {
                 .expect("unable to allocate memory")
         };
         let block = BlockPtr::new(ptr, alloc_size);
-        let mem = unsafe { block.mem_region() };
+        let mem = block.mem_region();
         assert!(mem.as_ptr() > block.as_ptr().cast::<c_void>());
         let block2 = BlockPtr::from_mem_region(mem).expect("unable to create from mem region");
         assert_eq!(block, block2);

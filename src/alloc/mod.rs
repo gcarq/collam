@@ -315,7 +315,7 @@ mod tests {
             assert!(!ptr.is_null());
 
             // Overwrite block metadata to simulate memory corruption
-            let meta_ptr = ptr.offset(-(BLOCK_META_SIZE as isize));
+            let meta_ptr = ptr.sub(BLOCK_META_SIZE);
             meta_ptr.write_bytes(0, BLOCK_META_SIZE);
 
             // Calling realloc on a corrupt memory region
@@ -338,7 +338,7 @@ mod tests {
             assert!(!ptr.is_null());
 
             // Overwrite block metadata to simulate memory corruption
-            let meta_ptr = ptr.offset(-(BLOCK_META_SIZE as isize));
+            let meta_ptr = ptr.sub(BLOCK_META_SIZE);
             meta_ptr.write_bytes(0, BLOCK_META_SIZE);
             collam.dealloc(ptr, layout);
         }
