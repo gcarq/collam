@@ -1,4 +1,6 @@
 # collam
+[![Build Status](https://travis-ci.org/gcarq/collam.svg?branch=master)](https://travis-ci.org/gcarq/collam) [![Coverage Status](https://coveralls.io/repos/github/gcarq/collam/badge.svg?branch=master)](https://coveralls.io/github/gcarq/collam?branch=master)
+
 A naive and thread safe general-purpose allocator written in Rust built with `#[no_std]`.
 This project started as an experiment to get comfortable with `#[no_std]` environments and `unsafe` Rust.
 This library is currently *NOT* stable and I'm sure there are plenty of bugs, be warned!
