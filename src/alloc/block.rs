@@ -195,8 +195,11 @@ impl fmt::Debug for BlockPtr {
 
 #[repr(C)]
 pub struct Block {
+    // Required metadata
     pub size: usize, // TODO: make private
     magic: u16,
+    // Memory region starts here. All following members will be
+    // overwritten and are unusable if block has been allocated by a user.
     pub next: Option<BlockPtr>,
     pub prev: Option<BlockPtr>,
 }
