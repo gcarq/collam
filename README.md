@@ -27,9 +27,9 @@ $ LD_PRELOAD="$(pwd)/target/release/libcollam.so" kwrite
 ```
 Or use the test script in the root folder:
 ```bash
-$ ./test.sh kwrite
+$ ./scripts/test.sh kwrite
 ```
-There are some more helper scripts, see `debug.sh`, `perf.sh` and `report.sh`.
+There are some more helper scripts for debugging, profiling, etc. See `scripts/` folder.
 
 
 ## Execute tests
