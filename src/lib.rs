@@ -1,7 +1,6 @@
 #![feature(stmt_expr_attributes)]
 #![feature(lang_items)]
 #![feature(core_intrinsics)]
-#![feature(core_panic_info)]
 #![feature(ptr_internals)]
 #![feature(alloc_layout_extra)]
 #![no_std]

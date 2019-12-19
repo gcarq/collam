@@ -32,13 +32,13 @@ pub const fn align_scalar_unchecked(val: usize) -> usize {
 /// possible scalar for the current architecture.
 #[inline]
 pub fn pad_to_scalar(size: usize) -> Result<Layout, LayoutErr> {
-    Layout::from_size_align(size, align_of::<libc::max_align_t>())?.pad_to_align()
+    Ok(Layout::from_size_align(size, align_of::<libc::max_align_t>())?.pad_to_align())
 }
 
 /// Returns a `Layout` padded to align.
 #[inline]
 pub fn pad_to_align(size: usize, align: usize) -> Result<Layout, LayoutErr> {
-    Layout::from_size_align(size, align)?.pad_to_align()
+    Ok(Layout::from_size_align(size, align)?.pad_to_align())
 }
 
 #[cfg(test)]
