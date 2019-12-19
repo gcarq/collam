@@ -29,7 +29,7 @@ before_script:
 script:
   - |
     travis-cargo build &&
-    travis-cargo test -- --test-threads 1
+    travis-cargo test
 after_success:
   # measure code coverage and upload to coveralls.io (the verify
   # argument mitigates kcov crashes due to malformed debuginfo, at the
@@ -40,8 +40,8 @@ after_success:
         KCOV=./kcov/build/src/kcov ./scripts/coverage.sh
     fi
 
-
 env:
   global:
     - TRAVIS_CARGO_NIGHTLY_FEATURE=""
     - RUST_BACKTRACE=1
+    - RUST_TEST_THREADS=1
