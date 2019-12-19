@@ -39,6 +39,7 @@ $ cargo test --all-features -- --test-threads 1
 ```
 
 ## TODO:
+* Set correct `crate-type` to use it as [GlobalAlloc](https://doc.rust-lang.org/beta/std/alloc/trait.GlobalAlloc.html) within Rust
 * Proper Page handling
 * mmap support
 * Thread-local allocation
