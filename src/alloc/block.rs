@@ -97,7 +97,7 @@ impl BlockPtr {
             return None;
         }
 
-        dprintln!("[merge]: {} at {:p}", self.as_ref(), self);
+        dprintln!("[merge]: {} at {:p}", self.as_ref(), self.0);
         dprintln!("       & {} at {:p}", next.as_ref(), next);
         // Update related links
         self.as_mut().next = next.as_ref().next;
@@ -112,14 +112,14 @@ impl BlockPtr {
             intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_META_SIZE)
         };
 
-        dprintln!("      -> {} at {:p}", self.as_ref(), self);
+        dprintln!("      -> {} at {:p}", self.as_ref(), self.0);
         Some(self)
     }
 
     /// Shrinks the block in-place to have the exact memory size as specified (excluding metadata).
     /// Returns a newly created `BlockPtr` with the remaining size or `None` if split is not possible.
     pub fn shrink(&mut self, size: usize) -> Option<BlockPtr> {
-        dprintln!("[split]: {} at {:p}", self.as_ref(), self);
+        dprintln!("[split]: {} at {:p}", self.as_ref(), self.0);
         debug_assert_eq!(
             size,
             util::pad_to_scalar(size).expect("unable to align").size()
@@ -139,7 +139,7 @@ impl BlockPtr {
         let new_block_ptr = unsafe { Unique::new_unchecked(self.mem_region().as_ptr().add(size)) };
         let new_block = BlockPtr::new(new_block_ptr, rem_block_size);
 
-        dprintln!("      -> {} at {:p}", self.as_ref(), self);
+        dprintln!("      -> {} at {:p}", self.as_ref(), self.0);
         dprintln!("      -> {} at {:p}", new_block.as_ref(), new_block);
         dprintln!(
             "         distance is {} bytes",
@@ -189,7 +189,7 @@ impl fmt::Pointer for BlockPtr {
 
 impl fmt::Debug for BlockPtr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} at {:p}", self.as_ref(), self)
+        write!(f, "{} at {:p}", self.as_ref(), self.0)
     }
 }
 
