@@ -6,12 +6,12 @@ use crate::util;
 
 /// The required block size to store the bare minimum of metadata (size + magic values).
 pub const BLOCK_META_SIZE: usize = util::align_scalar_unchecked(mem::align_of::<usize>() * 2);
-/// The minimal size of a block if not allocated by the user.
-/// This is `BLOCK_META_SIZE` including space to save intrusive data structures.
-pub const BLOCK_MIN_SIZE: usize = util::align_scalar_unchecked(
-    BLOCK_META_SIZE
-        + 2 * mem::align_of::<Option<BlockPtr>>()
-        + mem::align_of::<libc::max_align_t>(),
+/// The minimum region size to save intrusive data structures if not allocated by the user.
+const BLOCK_MIN_REGION_SIZE: usize =
+    util::align_scalar_unchecked(mem::align_of::<Option<BlockPtr>>() * 2);
+/// Defines the minimum remaining size of a block to consider splitting it.
+pub const BLOCK_SPLIT_MIN_SIZE: usize = util::align_scalar_unchecked(
+    BLOCK_META_SIZE + BLOCK_MIN_REGION_SIZE + mem::align_of::<libc::max_align_t>(),
 );
 
 const BLOCK_MAGIC_FREE: u16 = 0xDEAD;
@@ -23,39 +23,23 @@ pub struct BlockPtr(Unique<Block>);
 
 impl BlockPtr {
     /// Creates a `Block` instance at the given raw pointer for the specified size.
-    #[inline]
     pub fn new(ptr: Unique<c_void>, size: usize) -> Self {
         debug_assert_eq!(size, util::pad_to_scalar(size).unwrap().size());
         let ptr = ptr.cast::<Block>();
-        unsafe {
-            *ptr.as_ptr() = Block {
-                size,
-                next: None,
-                prev: None,
-                magic: BLOCK_MAGIC_FREE,
-            };
-        }
+        unsafe { *ptr.as_ptr() = Block::new(size) };
         BlockPtr(ptr)
     }
 
     /// Returns an existing `BlockPtr` instance from the given memory region raw pointer
-    #[inline]
     pub fn from_mem_region(ptr: Unique<c_void>) -> Option<Self> {
         let block_ptr = unsafe { ptr.as_ptr().sub(BLOCK_META_SIZE).cast::<Block>() };
         Some(BlockPtr(Unique::new(block_ptr)?))
     }
 
     /// Returns a pointer to the assigned memory region for the given block
-    #[inline]
     pub fn mem_region(self) -> Unique<c_void> {
-        debug_assert!(self.verify());
+        debug_assert!(self.as_ref().verify());
         unsafe { Unique::new_unchecked(self.as_ptr().cast::<c_void>().add(BLOCK_META_SIZE)) }
-    }
-
-    #[inline(always)]
-    pub fn unlink(&mut self) {
-        self.as_mut().next = None;
-        self.as_mut().prev = None;
     }
 
     /// Acquires underlying `*mut Block`.
@@ -65,7 +49,7 @@ impl BlockPtr {
     }
 
     /// Casts to a pointer of another type.
-    #[inline(always)]
+    #[inline]
     pub const fn cast<U>(self) -> Unique<U> {
         unsafe { Unique::new_unchecked(self.as_ptr() as *mut U) }
     }
@@ -77,14 +61,14 @@ impl BlockPtr {
     }
 
     /// Returns the allocatable size available for the user
-    #[inline(always)]
-    pub fn size(self) -> usize {
+    #[inline]
+    pub fn size(&self) -> usize {
         self.as_ref().size
     }
 
     /// Returns the raw size in memory for this block.
-    #[inline(always)]
-    pub fn block_size(self) -> usize {
+    #[inline]
+    pub fn block_size(&self) -> usize {
         BLOCK_META_SIZE + self.size()
     }
 
@@ -127,7 +111,7 @@ impl BlockPtr {
         // Check if its possible to split the block with the requested size
         let rem_block_size = self.size().checked_sub(size + BLOCK_META_SIZE)?;
 
-        if rem_block_size < BLOCK_MIN_SIZE {
+        if rem_block_size < BLOCK_SPLIT_MIN_SIZE {
             dprintln!("      -> None");
             return None;
         }
@@ -150,13 +134,6 @@ impl BlockPtr {
             0
         );
         Some(new_block)
-    }
-
-    /// Verifies block to detect memory corruption.
-    /// Returns `true` if block metadata is intact, `false` otherwise.
-    #[inline(always)]
-    pub fn verify(self) -> bool {
-        self.as_ref().magic == BLOCK_MAGIC_FREE
     }
 }
 
@@ -196,12 +173,36 @@ impl fmt::Debug for BlockPtr {
 #[repr(C)]
 pub struct Block {
     // Required metadata
-    pub size: usize, // TODO: make private
+    size: usize,
     magic: u16,
     // Memory region starts here. All following members will be
     // overwritten and are unusable if block has been allocated by a user.
     pub next: Option<BlockPtr>,
     pub prev: Option<BlockPtr>,
+}
+
+impl Block {
+    pub const fn new(size: usize) -> Self {
+        Block {
+            size,
+            next: None,
+            prev: None,
+            magic: BLOCK_MAGIC_FREE,
+        }
+    }
+
+    #[inline(always)]
+    pub fn unlink(&mut self) {
+        self.next = None;
+        self.prev = None;
+    }
+
+    /// Verifies block to detect memory corruption.
+    /// Returns `true` if block metadata is intact, `false` otherwise.
+    #[inline(always)]
+    pub fn verify(&self) -> bool {
+        self.magic == BLOCK_MAGIC_FREE
+    }
 }
 
 impl fmt::Display for Block {
@@ -232,7 +233,7 @@ mod tests {
             BLOCK_META_SIZE + size,
             "block raw size doesn't match"
         );
-        assert!(block.verify(), "unable to verify block metadata");
+        assert!(block.as_ref().verify(), "unable to verify block metadata");
         assert!(block.as_ref().next.is_none(), "next is not None");
         assert!(block.as_ref().prev.is_none(), "prev is not None");
     }
@@ -311,7 +312,7 @@ mod tests {
                 .expect("unable to allocate memory")
         };
         let block = BlockPtr::new(ptr, alloc_size);
-        assert!(block.verify());
+        assert!(block.as_ref().verify());
         unsafe { libc::free(ptr.as_ptr()) };
     }
 
@@ -324,7 +325,7 @@ mod tests {
         };
         let mut block = BlockPtr::new(ptr, alloc_size);
         block.as_mut().magic = 0x1234;
-        assert_eq!(block.verify(), false);
+        assert_eq!(block.as_ref().verify(), false);
 
         unsafe { libc::free(ptr.as_ptr()) };
     }

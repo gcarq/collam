@@ -121,11 +121,13 @@ unsafe impl GlobalAlloc for Collam {
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         if let Some(p) = Unique::new(ptr) {
+            dprintln!("[libcollam.so]: dealloc(ptr={:p})", ptr);
+
             let block = match BlockPtr::from_mem_region(p.cast::<c_void>()) {
                 Some(b) => b,
                 None => return,
             };
-            if unlikely(!block.verify()) {
+            if unlikely(!block.as_ref().verify()) {
                 eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
                 return;
             }
@@ -140,6 +142,8 @@ unsafe impl GlobalAlloc for Collam {
             None => return null_mut(),
         };
 
+        dprintln!("[libcollam.so]: realloc(ptr={:p}, size={})", ptr, new_size);
+
         // FIXME: Alignment  to old layout needed?
         let new_layout = match util::pad_to_scalar(new_size) {
             Ok(l) => l,
@@ -151,7 +155,7 @@ unsafe impl GlobalAlloc for Collam {
             None => return null_mut(),
         };
 
-        if unlikely(!old_block.verify()) {
+        if unlikely(!old_block.as_ref().verify()) {
             eprintln!(
                 "realloc(): Unable to verify {} at {:p}",
                 old_block.as_ref(),

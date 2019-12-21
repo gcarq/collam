@@ -69,7 +69,7 @@ pub unsafe extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
         Some(b) => b,
         None => return 0,
     };
-    if unlikely(!block.verify()) {
+    if unlikely(!block.as_ref().verify()) {
         eprintln!(
             "malloc_usable_size(): Unable to verify {} at {:p}",
             block.as_ref(),

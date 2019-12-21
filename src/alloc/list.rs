@@ -1,6 +1,6 @@
 use libc_print::libc_eprintln;
 
-use crate::alloc::block::{BlockPtr, BLOCK_MIN_SIZE};
+use crate::alloc::block::{BlockPtr, BLOCK_SPLIT_MIN_SIZE};
 use core::intrinsics::unlikely;
 
 #[repr(C)]
@@ -21,7 +21,7 @@ impl IntrusiveList {
     /// returns `Err` on detected double-free.
     pub unsafe fn insert(&mut self, mut to_insert: BlockPtr) -> Result<(), ()> {
         // Reset pointer locations since they were part as user allocatable data
-        to_insert.unlink();
+        to_insert.as_mut().unlink();
 
         // Add initial element
         if unlikely(self.head.is_none()) {
@@ -57,7 +57,7 @@ impl IntrusiveList {
                     );
                     return Some(self.remove(block));
                 }
-                if size + BLOCK_MIN_SIZE <= block.size() {
+                if size + BLOCK_SPLIT_MIN_SIZE <= block.size() {
                     dprintln!(
                         "[libcollam.so]: found suitable {} at {:p} for size {}",
                         block.as_ref(),
@@ -74,9 +74,10 @@ impl IntrusiveList {
     /// Prints some debugging information about the heap structure.
     #[cfg(feature = "debug")]
     pub fn debug(&self) {
+        dprintln!("[debug]: === list debug start ===");
         for (i, block) in self.iter().enumerate() {
             dprintln!("[debug]: pos: {}\t{} at\t{:p}", i, block.as_ref(), block);
-            if !block.verify() {
+            if !block.as_ref().verify() {
                 panic!("Unable to verify: {} at\t{:p}", block.as_ref(), block);
             }
 
@@ -107,6 +108,7 @@ impl IntrusiveList {
                 );
             }
         }
+        dprintln!("[debug]: === list debug end ===");
     }
 
     /// Adds a `BlockPtr` to the list before the given anchor.
@@ -206,7 +208,7 @@ impl IntrusiveList {
         if let Some(mut next) = elem.as_ref().next {
             next.as_mut().prev = elem.as_ref().prev;
         }
-        elem.unlink();
+        elem.as_mut().unlink();
         elem
     }
 
