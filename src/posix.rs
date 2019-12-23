@@ -6,7 +6,9 @@ use libc_print::libc_eprintln;
 
 use crate::alloc::{block::BlockPtr, Collam};
 
-static mut COLLAM: Collam = Collam::new();
+lazy_static! {
+    static ref COLLAM: Collam = Collam::default();
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {

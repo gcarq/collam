@@ -62,13 +62,13 @@ impl BlockPtr {
 
     /// Returns the allocatable size available for the user
     #[inline]
-    pub fn size(&self) -> usize {
+    pub fn size(self) -> usize {
         self.as_ref().size
     }
 
     /// Returns the raw size in memory for this block.
     #[inline]
-    pub fn block_size(&self) -> usize {
+    pub fn block_size(self) -> usize {
         BLOCK_META_SIZE + self.size()
     }
 

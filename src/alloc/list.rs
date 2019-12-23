@@ -1,7 +1,8 @@
+use core::intrinsics::unlikely;
+
 use libc_print::libc_eprintln;
 
 use crate::alloc::block::{BlockPtr, BLOCK_SPLIT_MIN_SIZE};
-use core::intrinsics::unlikely;
 
 #[repr(C)]
 pub struct IntrusiveList {
@@ -10,7 +11,7 @@ pub struct IntrusiveList {
 }
 
 impl IntrusiveList {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         IntrusiveList {
             head: None,
             tail: None,
@@ -236,30 +237,34 @@ impl Iterator for Iter {
 mod tests {
     use super::*;
     use crate::alloc::block::BLOCK_META_SIZE;
-    use crate::alloc::request_block;
+    use crate::alloc::heap::Heap;
+
+    #[test]
+    fn test_list_new() {
+        let list = IntrusiveList::new();
+        assert_eq!(list.head, None);
+        assert_eq!(list.tail, None);
+    }
 
     #[test]
     fn test_insert_after_no_merge() {
-        let mut list = IntrusiveList::new();
-        assert_eq!(list.head, None);
-        assert_eq!(list.tail, None);
-
-        let mut block = unsafe { request_block(256).expect("unable to request block") };
+        let mut heap = Heap::new();
+        let mut block = unsafe { heap.request(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { list.insert(block).expect("unable to insert") };
-        assert_eq!(list.head, Some(block));
-        assert_eq!(list.tail, Some(block));
+        unsafe { heap.list.insert(block).expect("unable to insert") };
+        assert_eq!(heap.list.head, Some(block));
+        assert_eq!(heap.list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
         assert_eq!(block.as_ref().prev, None);
 
         // Insert block3
-        unsafe { list.insert(block3).expect("unable to insert") };
-        assert_eq!(list.head, Some(block));
-        assert_eq!(list.tail, Some(block3));
+        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        assert_eq!(heap.list.head, Some(block));
+        assert_eq!(heap.list.tail, Some(block3));
         assert_eq!(block.as_ref().next, Some(block3));
         assert_eq!(block.as_ref().prev, None);
         assert_eq!(block3.as_ref().next, None);
@@ -268,26 +273,23 @@ mod tests {
 
     #[test]
     fn test_insert_before_no_merge() {
-        let mut list = IntrusiveList::new();
-        assert_eq!(list.head, None);
-        assert_eq!(list.tail, None);
-
-        let mut block = unsafe { request_block(256).expect("unable to request block") };
+        let mut heap = Heap::new();
+        let mut block = unsafe { heap.request(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block3
-        unsafe { list.insert(block3).expect("unable to insert") };
-        assert_eq!(list.head, Some(block3));
-        assert_eq!(list.tail, Some(block3));
+        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        assert_eq!(heap.list.head, Some(block3));
+        assert_eq!(heap.list.tail, Some(block3));
         assert_eq!(block3.as_ref().next, None);
         assert_eq!(block3.as_ref().prev, None);
 
         // Insert block1
-        unsafe { list.insert(block).expect("unable to insert") };
-        assert_eq!(list.head, Some(block));
-        assert_eq!(list.tail, Some(block3));
+        unsafe { heap.list.insert(block).expect("unable to insert") };
+        assert_eq!(heap.list.head, Some(block));
+        assert_eq!(heap.list.tail, Some(block3));
         assert_eq!(block.as_ref().next, Some(block3));
         assert_eq!(block.as_ref().prev, None);
         assert_eq!(block3.as_ref().next, None);
@@ -296,34 +298,31 @@ mod tests {
 
     #[test]
     fn test_insert_merge() {
-        let mut list = IntrusiveList::new();
-        assert_eq!(list.head, None);
-        assert_eq!(list.tail, None);
-
-        let mut block = unsafe { request_block(256).expect("unable to request block") };
+        let mut heap = Heap::new();
+        let mut block = unsafe { heap.request(256).expect("unable to request block") };
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { list.insert(block).expect("unable to insert") };
-        assert_eq!(list.head, Some(block));
-        assert_eq!(list.tail, Some(block));
+        unsafe { heap.list.insert(block).expect("unable to insert") };
+        assert_eq!(heap.list.head, Some(block));
+        assert_eq!(heap.list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
         assert_eq!(block.as_ref().prev, None);
         assert_eq!(block.size(), 64);
 
         // Insert block2
-        unsafe { list.insert(block2).expect("unable to insert") };
-        assert_eq!(list.head, Some(block));
-        assert_eq!(list.tail, Some(block));
+        unsafe { heap.list.insert(block2).expect("unable to insert") };
+        assert_eq!(heap.list.head, Some(block));
+        assert_eq!(heap.list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
         assert_eq!(block.as_ref().prev, None);
         assert_eq!(block.size(), 64 + BLOCK_META_SIZE + 64);
 
         // Insert block3
-        unsafe { list.insert(block3).expect("unable to insert") };
-        assert_eq!(list.head, Some(block));
-        assert_eq!(list.tail, Some(block));
+        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        assert_eq!(heap.list.head, Some(block));
+        assert_eq!(heap.list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
         assert_eq!(block.as_ref().prev, None);
         assert!(block.size() > 64 + BLOCK_META_SIZE + 64 + BLOCK_META_SIZE);
@@ -331,18 +330,18 @@ mod tests {
 
     #[test]
     fn test_pop_exact_size() {
-        let mut list = IntrusiveList::new();
-        let mut block = unsafe { request_block(512).expect("unable to request block") };
+        let mut heap = Heap::new();
+        let mut block = unsafe { heap.request(512).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { list.insert(block).expect("unable to insert") };
+        unsafe { heap.list.insert(block).expect("unable to insert") };
         // Insert block3
-        unsafe { list.insert(block3).expect("unable to insert") };
+        unsafe { heap.list.insert(block3).expect("unable to insert") };
 
-        let result = list.pop(64).expect("got no block");
+        let result = heap.list.pop(64).expect("got no block");
         assert_eq!(result, block);
         assert_eq!(result.as_ref().next, None);
         assert_eq!(result.as_ref().prev, None);
@@ -351,18 +350,18 @@ mod tests {
 
     #[test]
     fn test_pop_smaller_size() {
-        let mut list = IntrusiveList::new();
-        let mut block = unsafe { request_block(512).expect("unable to request block") };
+        let mut heap = Heap::new();
+        let mut block = unsafe { heap.request(512).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { list.insert(block).expect("unable to insert") };
+        unsafe { heap.list.insert(block).expect("unable to insert") };
         // Insert block3
-        unsafe { list.insert(block3).expect("unable to insert") };
+        unsafe { heap.list.insert(block3).expect("unable to insert") };
 
-        let result = list.pop(16).expect("got no block");
+        let result = heap.list.pop(16).expect("got no block");
         assert_eq!(result, block);
         assert_eq!(result.as_ref().next, None);
         assert_eq!(result.as_ref().prev, None);
@@ -371,17 +370,17 @@ mod tests {
 
     #[test]
     fn test_iter() {
-        let mut list = IntrusiveList::new();
-        let mut block = unsafe { request_block(256).expect("unable to request block") };
+        let mut heap = Heap::new();
+        let mut block = unsafe { heap.request(256).expect("unable to request block") };
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { list.insert(block).expect("unable to insert") };
+        unsafe { heap.list.insert(block).expect("unable to insert") };
         // Insert block3
-        unsafe { list.insert(block3).expect("unable to insert") };
+        unsafe { heap.list.insert(block3).expect("unable to insert") };
 
-        let mut iter = list.iter();
+        let mut iter = heap.list.iter();
         assert_eq!(iter.next().unwrap(), block);
         assert_eq!(iter.next().unwrap(), block3);
         assert!(iter.next().is_none());
@@ -390,16 +389,16 @@ mod tests {
     #[cfg(feature = "debug")]
     #[test]
     fn test_debug() {
-        let mut list = IntrusiveList::new();
-        let mut block = unsafe { request_block(256).expect("unable to request block") };
+        let mut heap = Heap::new();
+        let mut block = unsafe { heap.request(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { list.insert(block).expect("unable to insert") };
+        unsafe { heap.list.insert(block).expect("unable to insert") };
         // Insert block3
-        unsafe { list.insert(block3).expect("unable to insert") };
-        list.debug()
+        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        heap.list.debug()
     }
 }

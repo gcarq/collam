@@ -3,10 +3,12 @@
 #![feature(core_intrinsics)]
 #![feature(ptr_internals)]
 #![feature(alloc_layout_extra)]
+#![feature(const_fn)]
 #![no_std]
 
 extern crate libc;
 extern crate libc_print;
+#[cfg(feature = "posix")]
 #[macro_use]
 extern crate lazy_static;
 extern crate spin;

@@ -4,80 +4,37 @@ use core::{cmp, ffi::c_void, intrinsics, ptr::null_mut, ptr::Unique};
 
 use libc_print::libc_eprintln;
 
-use crate::alloc::block::{BlockPtr, BLOCK_META_SIZE};
-use crate::alloc::list::IntrusiveList;
-#[cfg(feature = "stats")]
-use crate::stats;
+use crate::alloc::block::BlockPtr;
+use crate::alloc::heap::Heap;
 use crate::util;
 
 pub mod block;
+mod heap;
 mod list;
 
-lazy_static! {
-    static ref PAGE_SIZE: usize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+pub struct Collam {
+    heap: spin::Mutex<Heap>,
 }
 
-pub struct Collam {
-    heap: spin::Mutex<IntrusiveList>,
+impl Default for Collam {
+    fn default() -> Self {
+        Collam {
+            heap: spin::Mutex::new(Heap::new()),
+        }
+    }
 }
 
 impl Collam {
-    #[allow(unused)]
-    pub const fn new() -> Self {
-        Collam {
-            heap: spin::Mutex::new(IntrusiveList::new()),
-        }
-    }
-
-    /// Reserves and returns suitable empty `BlockPtr`.
-    /// This can be either a reused empty block or a new one requested from kernel.
-    unsafe fn reserve_block(&self, size: usize) -> Option<BlockPtr> {
-        // Locking this whole function is critical since break will be increased!
+    /// Requests and returns suitable empty `BlockPtr`.
+    unsafe fn request_block(&self, size: usize) -> Option<BlockPtr> {
         let mut heap = self.heap.lock();
-
-        // Check for reusable blocks.
-        if let Some(block) = (*heap).pop(size) {
-            dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
-            return Some(block);
-        }
-        // Request new block from kernel
-        request_block(size)
+        (*heap).request(size)
     }
 
     /// Releases the given `BlockPtr` back to the allocator.
-    /// NOTE: The memory is returned to the OS if it is adjacent to program break.
     unsafe fn release_block(&self, block: BlockPtr) {
-        // Lock heap for the whole function
         let mut heap = self.heap.lock();
-
-        #[cfg(feature = "debug")]
-        {
-            (*heap).debug();
-        }
-        #[cfg(feature = "stats")]
-        {
-            stats::update_ends((*heap).head, (*heap).tail);
-            stats::print();
-        }
-
-        let ptr = block.next_potential_block();
-        if let Some(brk) = util::sbrk(0) {
-            if ptr.as_ptr() == brk.as_ptr() {
-                let offset = block.block_size() as isize;
-                dprintln!(
-                    "[insert]: freeing {} bytes from process (break={:?})",
-                    offset,
-                    ptr
-                );
-                util::sbrk(-offset);
-                return;
-            }
-        }
-
-        dprintln!("[insert]: {} at {:p}", block.as_ref(), block);
-        if unlikely((*heap).insert(block).is_err()) {
-            eprintln!("double free detected for ptr {:?}", block.mem_region());
-        }
+        (*heap).release(block)
     }
 }
 
@@ -93,7 +50,7 @@ unsafe impl GlobalAlloc for Collam {
         };
 
         dprintln!("[libcollam.so]: alloc(size={})", layout.size());
-        let mut block = match self.reserve_block(layout.size()) {
+        let mut block = match self.request_block(layout.size()) {
             Some(b) => b,
             None => {
                 dprintln!("[libcollam.so]: failed for size: {}\n", layout.size());
@@ -187,50 +144,17 @@ unsafe impl GlobalAlloc for Collam {
     }
 }
 
-/// Requests memory for the specified size from kernel
-/// and returns a `BlockPtr` to the newly created block or `None` if not possible.
-/// Marked as unsafe because it is not thread safe.
-unsafe fn request_block(min_size: usize) -> Option<BlockPtr> {
-    let size = util::pad_to_align(BLOCK_META_SIZE + min_size, *PAGE_SIZE)
-        .ok()?
-        .size();
-    Some(BlockPtr::new(
-        util::sbrk(size as isize)?,
-        size - BLOCK_META_SIZE,
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alloc::block::BLOCK_META_SIZE;
     use crate::util;
     use core::intrinsics::write_bytes;
 
     #[test]
-    fn test_request_block() {
-        unsafe {
-            let block = request_block(256).expect("unable to request block");
-            let brk = block.next_potential_block().as_ptr();
-            assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
-        }
-    }
-
-    #[test]
-    fn test_request_block_split() {
-        unsafe {
-            let rem_block = request_block(256)
-                .expect("unable to request block")
-                .shrink(128)
-                .expect("unable to split block");
-            let brk = rem_block.next_potential_block().as_ptr();
-            assert_eq!(brk, util::sbrk(0).expect("sbrk(0) failed").as_ptr());
-        }
-    }
-
-    #[test]
     fn test_collam_alloc_ok() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(123).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -242,7 +166,7 @@ mod tests {
     #[test]
     fn test_collam_alloc_zero_size() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(0).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(ptr.is_null());
@@ -252,7 +176,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_bigger_size() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -266,7 +190,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_smaller_size() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(512).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -280,7 +204,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_same_size() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(512).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -294,7 +218,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_null() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
             let ptr = collam.realloc(null_mut(), layout, 789);
             assert_eq!(ptr, null_mut());
@@ -304,7 +228,7 @@ mod tests {
     #[test]
     fn test_collam_dealloc_null() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
             collam.dealloc(null_mut(), layout);
         }
@@ -313,7 +237,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_memory_corruption() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -336,7 +260,7 @@ mod tests {
     #[test]
     fn test_collam_dealloc_memory_corruption() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_to_scalar(32).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
