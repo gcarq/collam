@@ -1,6 +1,5 @@
 use core::alloc::{GlobalAlloc, Layout};
-use core::intrinsics::unlikely;
-use core::{cmp, ffi::c_void, intrinsics, ptr::null_mut, ptr::Unique};
+use core::{cmp, ffi::c_void, intrinsics, intrinsics::unlikely, ptr::null_mut, ptr::Unique};
 
 use libc_print::libc_eprintln;
 

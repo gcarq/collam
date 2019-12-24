@@ -1,16 +1,11 @@
-#![feature(stmt_expr_attributes)]
 #![feature(lang_items)]
 #![feature(core_intrinsics)]
 #![feature(ptr_internals)]
 #![feature(alloc_layout_extra)]
-#![feature(const_fn)]
 #![no_std]
 
 extern crate libc;
 extern crate libc_print;
-#[cfg(feature = "posix")]
-#[macro_use]
-extern crate lazy_static;
 extern crate spin;
 
 #[cfg(test)]
@@ -23,8 +18,6 @@ use libc_print::libc_eprintln;
 
 mod macros;
 pub mod alloc;
-#[cfg(all(feature = "posix", not(test)))]
-pub mod posix;
 #[cfg(feature = "stats")]
 mod stats;
 mod util;

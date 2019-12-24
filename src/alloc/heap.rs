@@ -1,5 +1,4 @@
-use core::intrinsics::unlikely;
-use core::{ffi::c_void, ptr::Unique};
+use core::{ffi::c_void, intrinsics::unlikely, ptr::Unique};
 
 use libc_print::libc_eprintln;
 

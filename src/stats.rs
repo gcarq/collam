@@ -1,5 +1,4 @@
-use core::ffi::c_void;
-use core::ptr::Unique;
+use core::{ffi::c_void, ptr::Unique};
 
 use crate::alloc::block::BlockPtr;
 use libc_print::libc_eprintln;

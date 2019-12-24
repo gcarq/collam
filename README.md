@@ -24,8 +24,8 @@ however the performance is not there yet.
 Make sure you have Rust nightly.
 Manually overwrite default allocator:
 ```bash
-$ cargo build --features posix --release
-$ LD_PRELOAD="$(pwd)/target/release/libcollam.so" kwrite
+$ cargo build --manifest-path posix/Cargo.toml --release
+$ LD_PRELOAD="$(pwd)/posix/target/release/libcollam.so" kwrite
 ```
 Or use the test script in the root folder:
 ```bash

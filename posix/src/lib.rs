@@ -1,10 +1,17 @@
+#![feature(ptr_internals)]
+#![feature(core_intrinsics)]
+#![no_std]
+
+#[macro_use]
+extern crate collam;
+#[macro_use]
+extern crate lazy_static;
+
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::{null_mut, Unique};
 use core::{ffi::c_void, intrinsics::unlikely, mem};
 
-use libc_print::libc_eprintln;
-
-use crate::alloc::{block::BlockPtr, Collam};
+use collam::alloc::{block::BlockPtr, Collam};
 
 lazy_static! {
     static ref COLLAM: Collam = Collam::default();
@@ -89,5 +96,5 @@ pub extern "C" fn mallopt(param: i32, value: i32) -> i32 {
         "[mallopt] not implemented! (param={}, value={})",
         param, value
     );
-    return 1;
+    1
 }

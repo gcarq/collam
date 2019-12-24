@@ -1,12 +1,12 @@
 [package]
-name = "collam"
+name = "posix"
 version = "0.0.1"
 authors = ["Michael Egger <michael.egger@tsn.at>"]
 edition = "2018"
 
 [lib]
 name = "collam"
-crate-type = ["rlib"]
+crate-type = ["cdylib"]
 
 [features]
 # Enables debug assertions and trace logs.
@@ -17,9 +17,9 @@ debug = []
 stats = []
 
 [dependencies]
+collam = { path = ".." }
 libc = { version = "0.2", default-features = false }
-libc-print = "0.1.11"
-spin = "0.5.2"
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 
 [profile.dev]
 panic = "abort"

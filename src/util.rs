@@ -1,8 +1,5 @@
 use core::alloc::{Layout, LayoutErr};
-use core::ffi::c_void;
-use core::intrinsics::unlikely;
-use core::mem::align_of;
-use core::ptr::Unique;
+use core::{ffi::c_void, intrinsics::unlikely, mem::align_of, ptr::Unique};
 
 #[cfg(feature = "stats")]
 use crate::stats;

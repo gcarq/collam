@@ -15,8 +15,8 @@ rm -rf ${TMP_DIR}
 mkdir -p ${TMP_DIR}
 
 # Build everything
-cargo build --features posix --release
+cargo build --manifest-path posix/Cargo.toml --release
 gcc test.c -o ${TMP_DIR}/test
 
 # Start test executable
-perf record -g bash -c "LD_PRELOAD=\"$(pwd)/target/${CHANNEL}/libcollam.so\" ${EXECUTABLE}"
+perf record -g bash -c "LD_PRELOAD=\"$(pwd)/posix/target/${CHANNEL}/libcollam.so\" ${EXECUTABLE}"
