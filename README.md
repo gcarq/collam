@@ -20,6 +20,20 @@ The overhead for each use allocated block is 16 bytes whereas only 12 bytes of t
 In regards of memory usage/overhead it is comparable to dlmalloc with tested applications,
 however the performance is not there yet.
 
+## Usage within Rust
+```rust
+use collam::alloc::Collam;
+
+#[global_allocator]
+static ALLOC: Collam = Collam;
+
+fn main() {
+    let mut vec = Vec::new();
+    vec.push(42);
+    assert_eq!(vec.pop().unwrap(), 42);
+}
+```
+
 ## Testing collam in C/POSIX environment
 Make sure you have Rust nightly.
 Manually overwrite default allocator:
@@ -33,7 +47,6 @@ $ ./scripts/test.sh kwrite
 ```
 There are some more helper scripts for debugging, profiling, etc. See `scripts/` folder.
 
-
 ## Execute tests
 Tests are not thread safe, make sure to force 1 thread only!
 ```bash
@@ -41,7 +54,6 @@ $ cargo test --all-features -- --test-threads 1
 ```
 
 ## TODO:
-* Set correct `crate-type` to use it as [GlobalAlloc](https://doc.rust-lang.org/beta/std/alloc/trait.GlobalAlloc.html) within Rust
 * Proper Page handling
 * mmap support
 * Thread-local allocation
