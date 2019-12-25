@@ -1,5 +1,6 @@
 #![feature(ptr_internals)]
 #![feature(core_intrinsics)]
+#![feature(lang_items)]
 #![no_std]
 
 #[macro_use]
@@ -8,8 +9,9 @@ extern crate collam;
 extern crate lazy_static;
 
 use core::alloc::{GlobalAlloc, Layout};
+use core::intrinsics::{abort, unlikely};
 use core::ptr::{null_mut, Unique};
-use core::{ffi::c_void, intrinsics::unlikely, mem};
+use core::{ffi::c_void, mem, panic};
 
 use collam::alloc::{block::BlockPtr, Collam};
 
@@ -98,3 +100,18 @@ pub extern "C" fn mallopt(param: i32, value: i32) -> i32 {
     );
     1
 }
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &panic::PanicInfo) -> ! {
+    eprintln!("[libcollam.so]: panic occurred: {:?}", info);
+    unsafe { abort() };
+}
+
+#[cfg(not(test))]
+#[lang = "eh_personality"]
+extern "C" fn eh_personality() {}
+
+#[cfg(not(test))]
+#[lang = "eh_unwind_resume"]
+extern "C" fn eh_unwind_resume() {}

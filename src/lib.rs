@@ -1,4 +1,3 @@
-#![feature(lang_items)]
 #![feature(core_intrinsics)]
 #![feature(ptr_internals)]
 #![feature(alloc_layout_extra)]
@@ -12,8 +11,7 @@ extern crate spin;
 #[macro_use]
 extern crate std;
 
-use core::{intrinsics, panic};
-
+#[allow(unused_imports)]
 use libc_print::libc_eprintln;
 
 mod macros;
@@ -21,18 +19,3 @@ pub mod alloc;
 #[cfg(feature = "stats")]
 mod stats;
 mod util;
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &panic::PanicInfo) -> ! {
-    eprintln!("[libcollam.so]: panic occurred: {:?}", info);
-    unsafe { intrinsics::abort() };
-}
-
-#[cfg(not(test))]
-#[lang = "eh_personality"]
-extern "C" fn eh_personality() {}
-
-#[cfg(not(test))]
-#[lang = "eh_unwind_resume"]
-extern "C" fn eh_unwind_resume() {}
