@@ -2,6 +2,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::{cmp, ffi::c_void, intrinsics, intrinsics::unlikely, ptr::null_mut, ptr::Unique};
 
 use libc_print::libc_eprintln;
+use spin::Mutex;
 
 use crate::alloc::block::BlockPtr;
 use crate::alloc::heap::Heap;
@@ -11,28 +12,22 @@ pub mod block;
 mod heap;
 mod list;
 
-pub struct Collam {
-    heap: spin::Mutex<Heap>,
+lazy_static! {
+    static ref HEAP: Mutex<Heap> = spin::Mutex::new(Heap::new());
 }
 
-impl Default for Collam {
-    fn default() -> Self {
-        Collam {
-            heap: spin::Mutex::new(Heap::new()),
-        }
-    }
-}
+pub struct Collam;
 
 impl Collam {
     /// Requests and returns suitable empty `BlockPtr`.
     unsafe fn request_block(&self, size: usize) -> Option<BlockPtr> {
-        let mut heap = self.heap.lock();
+        let mut heap = HEAP.lock();
         (*heap).request(size)
     }
 
     /// Releases the given `BlockPtr` back to the allocator.
     unsafe fn release_block(&self, block: BlockPtr) {
-        let mut heap = self.heap.lock();
+        let mut heap = HEAP.lock();
         (*heap).release(block)
     }
 }
@@ -153,21 +148,19 @@ mod tests {
     #[test]
     fn test_collam_alloc_ok() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(123).expect("unable to align layout");
-            let ptr = collam.alloc(layout);
+            let ptr = Collam.alloc(layout);
             assert!(!ptr.is_null());
             write_bytes(ptr, 1, 123);
-            collam.dealloc(ptr, layout);
+            Collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_alloc_zero_size() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(0).expect("unable to align layout");
-            let ptr = collam.alloc(layout);
+            let ptr = Collam.alloc(layout);
             assert!(ptr.is_null());
         }
     }
@@ -175,51 +168,47 @@ mod tests {
     #[test]
     fn test_collam_realloc_bigger_size() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
-            let ptr = collam.alloc(layout);
+            let ptr = Collam.alloc(layout);
             assert!(!ptr.is_null());
 
-            let ptr = collam.realloc(ptr, layout, 789);
+            let ptr = Collam.realloc(ptr, layout, 789);
             write_bytes(ptr, 2, 789);
-            collam.dealloc(ptr, layout);
+            Collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_realloc_smaller_size() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(512).expect("unable to align layout");
-            let ptr = collam.alloc(layout);
+            let ptr = Collam.alloc(layout);
             assert!(!ptr.is_null());
 
-            let ptr = collam.realloc(ptr, layout, 128);
+            let ptr = Collam.realloc(ptr, layout, 128);
             write_bytes(ptr, 2, 128);
-            collam.dealloc(ptr, layout);
+            Collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_realloc_same_size() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(512).expect("unable to align layout");
-            let ptr = collam.alloc(layout);
+            let ptr = Collam.alloc(layout);
             assert!(!ptr.is_null());
-            let ptr2 = collam.realloc(ptr, layout, 512);
+            let ptr2 = Collam.realloc(ptr, layout, 512);
             assert!(!ptr2.is_null());
             assert_eq!(ptr, ptr2);
-            collam.dealloc(ptr, layout);
+            Collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_realloc_null() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
-            let ptr = collam.realloc(null_mut(), layout, 789);
+            let ptr = Collam.realloc(null_mut(), layout, 789);
             assert_eq!(ptr, null_mut());
         }
     }
@@ -227,18 +216,16 @@ mod tests {
     #[test]
     fn test_collam_dealloc_null() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
-            collam.dealloc(null_mut(), layout);
+            Collam.dealloc(null_mut(), layout);
         }
     }
 
     #[test]
     fn test_collam_realloc_memory_corruption() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
-            let ptr = collam.alloc(layout);
+            let ptr = Collam.alloc(layout);
             assert!(!ptr.is_null());
 
             // Overwrite block metadata to simulate memory corruption
@@ -246,28 +233,27 @@ mod tests {
             meta_ptr.write_bytes(0, BLOCK_META_SIZE);
 
             // Calling realloc on a corrupt memory region
-            let ptr = collam.realloc(ptr, layout, 789);
+            let ptr = Collam.realloc(ptr, layout, 789);
             assert!(ptr.is_null());
 
             // Calling alloc again. We expect to get a new block, the old memory is leaked.
-            let ptr = collam.alloc(layout);
+            let ptr = Collam.alloc(layout);
             assert!(!ptr.is_null());
-            collam.dealloc(ptr, layout);
+            Collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_dealloc_memory_corruption() {
         unsafe {
-            let collam = Collam::default();
             let layout = util::pad_to_scalar(32).expect("unable to align layout");
-            let ptr = collam.alloc(layout);
+            let ptr = Collam.alloc(layout);
             assert!(!ptr.is_null());
 
             // Overwrite block metadata to simulate memory corruption
             let meta_ptr = ptr.sub(BLOCK_META_SIZE);
             meta_ptr.write_bytes(0, BLOCK_META_SIZE);
-            collam.dealloc(ptr, layout);
+            Collam.dealloc(ptr, layout);
         }
     }
 }
