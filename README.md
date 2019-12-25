@@ -6,8 +6,9 @@ This project started as an experiment to get comfortable with `#[no_std]` enviro
 This library is currently *NOT* stable and I'm sure there are plenty of bugs, be warned!
 
 ## A note on its state
-Exposed POSIX functions: `malloc`, `calloc`, `realloc`, `free`, `malloc_usable_size`, `mallopt`.
-It is currently stable with a lot of tested programs using `LD_PRELOAD`, however it does not implement Rusts `GlobalAlloc` yet.
+Collam implements the `GlobalAlloc` trait and can be used within Rust.
+The sub-crate `posix` exposes `malloc`, `calloc`, `realloc`, `free`, `malloc_usable_size`, `mallopt` and can be used for arbitrary programs,
+in its current state its working with all tested programs using `LD_PRELOAD`.
 
 ## Tested platforms
 [x] Linux x86_64
