@@ -45,7 +45,6 @@ impl IntrusiveList {
     }
 
     /// Removes and returns the first suitable `BlockPtr`.
-    #[inline]
     pub fn pop(&mut self, size: usize) -> Option<BlockPtr> {
         for block in self.iter() {
             unsafe {
@@ -143,7 +142,6 @@ impl IntrusiveList {
     }
 
     /// Checks if head or tail should be updated with the given `BlockPtr`.
-    #[inline]
     unsafe fn update_ends(&mut self, block: BlockPtr) {
         // Update head if necessary
         if block.as_ref().prev.is_none() {
@@ -158,7 +156,6 @@ impl IntrusiveList {
 
     /// Takes a `BlockPtr` and tries to merge adjacent blocks if possible.
     /// Always returns a `BlockPtr`.
-    #[inline]
     unsafe fn maybe_merge_adjacent(block: BlockPtr) -> BlockPtr {
         let block = match block.as_ref().prev {
             Some(prev) => prev.maybe_merge_next().unwrap_or(block),
@@ -171,7 +168,6 @@ impl IntrusiveList {
     /// or `None` if no block exists at a higher memory address.
     /// Returns `Err` if given `BlockPtr` is already in list.
     /// TODO: implement with better algorithm
-    #[inline]
     fn find_higher_block(&self, to_insert: BlockPtr) -> Result<Option<BlockPtr>, ()> {
         for block in self.iter() {
             if block.as_ptr() > to_insert.as_ptr() {

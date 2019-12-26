@@ -4,7 +4,7 @@ use core::{cmp, ffi::c_void, intrinsics, intrinsics::unlikely, ptr::null_mut, pt
 use libc_print::libc_eprintln;
 use spin::Mutex;
 
-use crate::alloc::block::BlockPtr;
+use crate::alloc::block::{BlockPtr, BLOCK_MIN_REGION_SIZE};
 use crate::alloc::heap::Heap;
 use crate::util;
 
@@ -43,8 +43,9 @@ unsafe impl GlobalAlloc for Collam {
             Err(_) => return null_mut(),
         };
 
-        dprintln!("[libcollam.so]: alloc(size={})", layout.size());
-        let mut block = match self.request_block(layout.size()) {
+        let size = cmp::max(layout.size(), BLOCK_MIN_REGION_SIZE);
+        dprintln!("[libcollam.so]: alloc(size={})", size);
+        let mut block = match self.request_block(size) {
             Some(b) => b,
             None => {
                 dprintln!("[libcollam.so]: failed for size: {}\n", layout.size());
@@ -52,7 +53,7 @@ unsafe impl GlobalAlloc for Collam {
             }
         };
 
-        if let Some(rem_block) = block.shrink(layout.size()) {
+        if let Some(rem_block) = block.shrink(size) {
             self.release_block(rem_block);
         }
 
@@ -62,9 +63,9 @@ unsafe impl GlobalAlloc for Collam {
             block
         );
         debug_assert!(
-            block.size() >= layout.size(),
+            block.size() >= size,
             "requested_size={}, got_block={}",
-            layout.size(),
+            size,
             block.as_ref()
         );
         block.mem_region().cast::<u8>().as_ptr()
@@ -115,26 +116,25 @@ unsafe impl GlobalAlloc for Collam {
             return null_mut();
         }
 
-        // Shrink allocated block if size is smaller.
-        if new_layout.size() < old_block.size() {
-            if let Some(rem_block) = old_block.shrink(new_layout.size()) {
+        if new_layout.size() == old_block.size() {
+            // Just return pointer if size didn't change.
+            ptr.cast::<u8>().as_ptr()
+        } else if new_layout.size() > old_block.size() {
+            // Allocate new region to fit size.
+            let new_ptr = self.alloc(new_layout).cast::<c_void>();
+            let copy_size = cmp::min(new_layout.size(), old_block.size());
+            intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
+            // Add old block back to heap structure.
+            self.release_block(old_block);
+            new_ptr.cast::<u8>()
+        } else {
+            // Shrink allocated block if size is smaller.
+            let size = cmp::max(new_layout.size(), BLOCK_MIN_REGION_SIZE);
+            if let Some(rem_block) = old_block.shrink(size) {
                 self.release_block(rem_block);
             }
-            return ptr.cast::<u8>().as_ptr();
+            ptr.cast::<u8>().as_ptr()
         }
-
-        // Just return pointer if size didn't change.
-        if new_layout.size() == old_block.size() {
-            return ptr.cast::<u8>().as_ptr();
-        }
-
-        // Allocate new region to fit size.
-        let new_ptr = self.alloc(new_layout).cast::<c_void>();
-        let copy_size = cmp::min(new_layout.size(), old_block.size());
-        intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
-        // Add old block back to heap structure.
-        self.release_block(old_block);
-        new_ptr.cast::<u8>()
     }
 }
 

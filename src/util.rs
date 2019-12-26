@@ -20,6 +20,7 @@ pub unsafe fn sbrk(size: isize) -> Option<Unique<c_void>> {
 /// Aligns passed value to be at lest the size of the
 /// largest scalar type `libc::max_align_t` and returns it.
 /// NOTE: not checked for overflows!
+#[inline]
 pub const fn align_scalar_unchecked(val: usize) -> usize {
     let align = align_of::<libc::max_align_t>();
     (val + align - 1) & !(align - 1)

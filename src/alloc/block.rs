@@ -7,7 +7,7 @@ use crate::util;
 /// The required block size to store the bare minimum of metadata (size + magic values).
 pub const BLOCK_META_SIZE: usize = util::align_scalar_unchecked(mem::align_of::<usize>() * 2);
 /// The minimum region size to save intrusive data structures if not allocated by the user.
-const BLOCK_MIN_REGION_SIZE: usize =
+pub const BLOCK_MIN_REGION_SIZE: usize =
     util::align_scalar_unchecked(mem::align_of::<Option<BlockPtr>>() * 2);
 /// Defines the minimum remaining size of a block to consider splitting it.
 pub const BLOCK_SPLIT_MIN_SIZE: usize = util::align_scalar_unchecked(
@@ -43,7 +43,7 @@ impl BlockPtr {
     }
 
     /// Acquires underlying `*mut Block`.
-    #[inline(always)]
+    #[inline]
     pub const fn as_ptr(self) -> *mut Block {
         self.0.as_ptr()
     }
@@ -191,7 +191,7 @@ impl Block {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn unlink(&mut self) {
         self.next = None;
         self.prev = None;
