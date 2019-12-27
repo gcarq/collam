@@ -12,9 +12,6 @@ crate-type = ["cdylib"]
 # Enables debug assertions and trace logs.
 # Should only be used during development!
 debug = []
-# Enables statistics printing.
-# Should only be used during development!
-stats = []
 
 [dependencies]
 collam = { path = ".." }

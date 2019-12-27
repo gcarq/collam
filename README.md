@@ -8,7 +8,7 @@ This library is currently *NOT* stable and I'm sure there are plenty of bugs, be
 ## A note on its state
 Collam implements the `GlobalAlloc` trait and can be used within Rust.
 The sub-crate `posix` exposes `malloc`, `calloc`, `realloc`, `free`, `malloc_usable_size`, `mallopt` and can be used for arbitrary programs,
-in its current state its working with all tested programs using `LD_PRELOAD`.
+in its current state its working with almost all tested programs using `LD_PRELOAD`.
 
 ## Tested platforms
 [x] Linux x86_64
@@ -26,7 +26,7 @@ however the performance is not there yet.
 use collam::alloc::Collam;
 
 #[global_allocator]
-static ALLOC: Collam = Collam;
+static ALLOC: Collam = Collam::new();
 
 fn main() {
     let mut vec = Vec::new();

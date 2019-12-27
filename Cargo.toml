@@ -12,9 +12,6 @@ crate-type = ["rlib"]
 # Enables debug assertions and trace logs.
 # Should only be used during development!
 debug = []
-# Enables statistics printing.
-# Should only be used during development!
-stats = []
 
 [dependencies]
 lazy_static = { version = "1.4.0", features = ["spin_no_std"] }

@@ -19,6 +19,4 @@ use libc_print::libc_eprintln;
 
 mod macros;
 pub mod alloc;
-#[cfg(feature = "stats")]
-mod stats;
 mod util;

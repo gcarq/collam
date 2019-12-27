@@ -1,9 +1,6 @@
 use core::alloc::{Layout, LayoutErr};
 use core::{ffi::c_void, intrinsics::unlikely, mem::align_of, ptr::Unique};
 
-#[cfg(feature = "stats")]
-use crate::stats;
-
 /// Wrapper for the kernel sbrk call.
 /// Marked as unsafe because it is not thread safe.
 #[inline]
@@ -12,8 +9,6 @@ pub unsafe fn sbrk(size: isize) -> Option<Unique<c_void>> {
     if unlikely(ptr == -1_isize as *mut c_void) {
         return None;
     }
-    #[cfg(feature = "stats")]
-    stats::update_heap_info(ptr);
     Unique::new(ptr)
 }
 

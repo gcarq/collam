@@ -1,25 +1,23 @@
-use core::{ffi::c_void, intrinsics::unlikely, ptr::Unique};
+use core::intrinsics::unlikely;
 
 use libc_print::libc_eprintln;
 
 use crate::alloc::block::{BlockPtr, BLOCK_META_SIZE};
 use crate::alloc::list::IntrusiveList;
-#[cfg(feature = "stats")]
-use crate::stats;
 use crate::util;
+
+lazy_static! {
+    static ref PAGE_SIZE: usize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+}
 
 pub struct Heap {
     pub list: IntrusiveList,
-    page_size: usize,
-    brk: Unique<c_void>,
 }
 
 impl Heap {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Heap {
             list: IntrusiveList::new(),
-            page_size: unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize,
-            brk: unsafe { util::sbrk(0).expect("sbrk(0) failed!") },
         }
     }
 
@@ -37,13 +35,9 @@ impl Heap {
     pub unsafe fn release(&mut self, block: BlockPtr) {
         #[cfg(feature = "debug")]
         self.list.debug();
-        #[cfg(feature = "stats")]
-        {
-            stats::update_ends(self.list.head, self.list.tail);
-            stats::print();
-        }
 
-        if block.next_potential_block().as_ptr() == self.brk.as_ptr() {
+        let brk = util::sbrk(0).expect("sbrk(0) failed!").as_ptr();
+        if block.next_potential_block().as_ptr() == brk {
             self.release_to_kernel(block);
             return;
         }
@@ -58,7 +52,7 @@ impl Heap {
     /// and returns a `BlockPtr` to the newly created block or `None` if not possible.
     /// Marked as unsafe because it is not thread safe.
     unsafe fn request_from_kernel(&self, min_size: usize) -> Option<BlockPtr> {
-        let size = util::pad_to_align(BLOCK_META_SIZE + min_size, self.page_size)
+        let size = util::pad_to_align(BLOCK_META_SIZE + min_size, *PAGE_SIZE)
             .ok()?
             .size();
         Some(BlockPtr::new(
@@ -74,10 +68,10 @@ impl Heap {
         dprintln!(
             "[insert]: freeing {} bytes from process (break={:?})",
             offset,
-            self.brk
+            util::sbrk(0).expect("sbrk(0) failed!").as_ptr()
         );
         // TODO: remove expect
-        self.brk = util::sbrk(-offset).expect("sbrk failed");
+        util::sbrk(-offset).expect("sbrk failed");
     }
 }
 

@@ -12,23 +12,27 @@ pub mod block;
 mod heap;
 mod list;
 
-lazy_static! {
-    static ref HEAP: Mutex<Heap> = spin::Mutex::new(Heap::new());
+pub struct Collam {
+    heap: Mutex<Heap>,
 }
 
-pub struct Collam;
-
 impl Collam {
+    pub const fn new() -> Self {
+        Collam {
+            heap: spin::Mutex::new(Heap::new()),
+        }
+    }
+
     /// Requests and returns suitable empty `BlockPtr`.
+    #[inline]
     unsafe fn request_block(&self, size: usize) -> Option<BlockPtr> {
-        let mut heap = HEAP.lock();
-        (*heap).request(size)
+        self.heap.lock().request(size)
     }
 
     /// Releases the given `BlockPtr` back to the allocator.
+    #[inline]
     unsafe fn release_block(&self, block: BlockPtr) {
-        let mut heap = HEAP.lock();
-        (*heap).release(block)
+        self.heap.lock().release(block)
     }
 }
 
@@ -116,24 +120,28 @@ unsafe impl GlobalAlloc for Collam {
             return null_mut();
         }
 
-        if new_layout.size() == old_block.size() {
-            // Just return pointer if size didn't change.
-            ptr.cast::<u8>().as_ptr()
-        } else if new_layout.size() > old_block.size() {
-            // Allocate new region to fit size.
-            let new_ptr = self.alloc(new_layout).cast::<c_void>();
-            let copy_size = cmp::min(new_layout.size(), old_block.size());
-            intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
-            // Add old block back to heap structure.
-            self.release_block(old_block);
-            new_ptr.cast::<u8>()
-        } else {
-            // Shrink allocated block if size is smaller.
-            let size = cmp::max(new_layout.size(), BLOCK_MIN_REGION_SIZE);
-            if let Some(rem_block) = old_block.shrink(size) {
-                self.release_block(rem_block);
+        match new_layout.size().cmp(&old_block.size()) {
+            cmp::Ordering::Equal => {
+                // Just return pointer if size didn't change.
+                ptr.cast::<u8>().as_ptr()
             }
-            ptr.cast::<u8>().as_ptr()
+            cmp::Ordering::Greater => {
+                // Allocate new region to fit size.
+                let new_ptr = self.alloc(new_layout).cast::<c_void>();
+                let copy_size = cmp::min(new_layout.size(), old_block.size());
+                intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
+                // Add old block back to heap structure.
+                self.release_block(old_block);
+                new_ptr.cast::<u8>()
+            }
+            cmp::Ordering::Less => {
+                // Shrink allocated block if size is smaller.
+                let size = cmp::max(new_layout.size(), BLOCK_MIN_REGION_SIZE);
+                if let Some(rem_block) = old_block.shrink(size) {
+                    self.release_block(rem_block);
+                }
+                ptr.cast::<u8>().as_ptr()
+            }
         }
     }
 }
@@ -148,19 +156,21 @@ mod tests {
     #[test]
     fn test_collam_alloc_ok() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(123).expect("unable to align layout");
-            let ptr = Collam.alloc(layout);
+            let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
             write_bytes(ptr, 1, 123);
-            Collam.dealloc(ptr, layout);
+            collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_alloc_zero_size() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(0).expect("unable to align layout");
-            let ptr = Collam.alloc(layout);
+            let ptr = collam.alloc(layout);
             assert!(ptr.is_null());
         }
     }
@@ -168,47 +178,51 @@ mod tests {
     #[test]
     fn test_collam_realloc_bigger_size() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
-            let ptr = Collam.alloc(layout);
+            let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
 
-            let ptr = Collam.realloc(ptr, layout, 789);
+            let ptr = collam.realloc(ptr, layout, 789);
             write_bytes(ptr, 2, 789);
-            Collam.dealloc(ptr, layout);
+            collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_realloc_smaller_size() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(512).expect("unable to align layout");
-            let ptr = Collam.alloc(layout);
+            let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
 
-            let ptr = Collam.realloc(ptr, layout, 128);
+            let ptr = collam.realloc(ptr, layout, 128);
             write_bytes(ptr, 2, 128);
-            Collam.dealloc(ptr, layout);
+            collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_realloc_same_size() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(512).expect("unable to align layout");
-            let ptr = Collam.alloc(layout);
+            let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
-            let ptr2 = Collam.realloc(ptr, layout, 512);
+            let ptr2 = collam.realloc(ptr, layout, 512);
             assert!(!ptr2.is_null());
             assert_eq!(ptr, ptr2);
-            Collam.dealloc(ptr, layout);
+            collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_realloc_null() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
-            let ptr = Collam.realloc(null_mut(), layout, 789);
+            let ptr = collam.realloc(null_mut(), layout, 789);
             assert_eq!(ptr, null_mut());
         }
     }
@@ -216,16 +230,18 @@ mod tests {
     #[test]
     fn test_collam_dealloc_null() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
-            Collam.dealloc(null_mut(), layout);
+            collam.dealloc(null_mut(), layout);
         }
     }
 
     #[test]
     fn test_collam_realloc_memory_corruption() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(16).expect("unable to align layout");
-            let ptr = Collam.alloc(layout);
+            let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
 
             // Overwrite block metadata to simulate memory corruption
@@ -233,27 +249,28 @@ mod tests {
             meta_ptr.write_bytes(0, BLOCK_META_SIZE);
 
             // Calling realloc on a corrupt memory region
-            let ptr = Collam.realloc(ptr, layout, 789);
+            let ptr = collam.realloc(ptr, layout, 789);
             assert!(ptr.is_null());
 
             // Calling alloc again. We expect to get a new block, the old memory is leaked.
-            let ptr = Collam.alloc(layout);
+            let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
-            Collam.dealloc(ptr, layout);
+            collam.dealloc(ptr, layout);
         }
     }
 
     #[test]
     fn test_collam_dealloc_memory_corruption() {
         unsafe {
+            let collam = Collam::new();
             let layout = util::pad_to_scalar(32).expect("unable to align layout");
-            let ptr = Collam.alloc(layout);
+            let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
 
             // Overwrite block metadata to simulate memory corruption
             let meta_ptr = ptr.sub(BLOCK_META_SIZE);
             meta_ptr.write_bytes(0, BLOCK_META_SIZE);
-            Collam.dealloc(ptr, layout);
+            collam.dealloc(ptr, layout);
         }
     }
 }

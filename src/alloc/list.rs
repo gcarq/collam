@@ -11,7 +11,7 @@ pub struct IntrusiveList {
 }
 
 impl IntrusiveList {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         IntrusiveList {
             head: None,
             tail: None,
