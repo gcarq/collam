@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 debug = []
 
 [dependencies]
-collam = { path = ".." }
+collam = { path = "..", features = []}
 libc = { version = "0.2", default-features = false }
 
 [profile.dev]

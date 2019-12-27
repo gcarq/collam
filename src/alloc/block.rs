@@ -1,4 +1,4 @@
-use core::{ffi::c_void, fmt, intrinsics, mem, ptr::Unique};
+use core::{fmt, intrinsics, mem, ptr::Unique};
 
 use libc_print::libc_eprintln;
 
@@ -23,7 +23,7 @@ pub struct BlockPtr(Unique<Block>);
 
 impl BlockPtr {
     /// Creates a `Block` instance at the given raw pointer for the specified size.
-    pub fn new(ptr: Unique<c_void>, size: usize) -> Self {
+    pub fn new(ptr: Unique<u8>, size: usize) -> Self {
         debug_assert_eq!(size, util::pad_to_scalar(size).unwrap().size());
         let ptr = ptr.cast::<Block>();
         unsafe { *ptr.as_ptr() = Block::new(size) };
@@ -31,15 +31,15 @@ impl BlockPtr {
     }
 
     /// Returns an existing `BlockPtr` instance from the given memory region raw pointer
-    pub fn from_mem_region(ptr: Unique<c_void>) -> Option<Self> {
+    pub fn from_mem_region(ptr: Unique<u8>) -> Option<Self> {
         let block_ptr = unsafe { ptr.as_ptr().sub(BLOCK_META_SIZE).cast::<Block>() };
         Some(BlockPtr(Unique::new(block_ptr)?))
     }
 
     /// Returns a pointer to the assigned memory region for the given block
-    pub fn mem_region(self) -> Unique<c_void> {
+    pub fn mem_region(self) -> Unique<u8> {
         debug_assert!(self.as_ref().verify());
-        unsafe { Unique::new_unchecked(self.as_ptr().cast::<c_void>().add(BLOCK_META_SIZE)) }
+        unsafe { Unique::new_unchecked(self.as_ptr().cast::<u8>().add(BLOCK_META_SIZE)) }
     }
 
     /// Acquires underlying `*mut Block`.
@@ -56,8 +56,8 @@ impl BlockPtr {
 
     /// Returns a pointer where the next `Block` would start.
     #[inline]
-    pub fn next_potential_block(self) -> Unique<c_void> {
-        unsafe { Unique::new_unchecked(self.cast::<c_void>().as_ptr().add(self.block_size())) }
+    pub fn next_potential_block(self) -> Unique<u8> {
+        unsafe { Unique::new_unchecked(self.cast::<u8>().as_ptr().add(self.block_size())) }
     }
 
     /// Returns the allocatable size available for the user
@@ -77,7 +77,7 @@ impl BlockPtr {
     pub fn maybe_merge_next(mut self) -> Option<BlockPtr> {
         let next = self.as_ref().next?;
 
-        if self.next_potential_block().as_ptr() != next.cast::<c_void>().as_ptr() {
+        if self.next_potential_block().as_ptr() != next.cast::<u8>().as_ptr() {
             return None;
         }
 
@@ -92,9 +92,7 @@ impl BlockPtr {
         self.as_mut().size += BLOCK_META_SIZE + next.size();
 
         // Overwrite block meta data for old block to detect double free
-        unsafe {
-            intrinsics::volatile_set_memory(next.cast::<c_void>().as_ptr(), 0, BLOCK_META_SIZE)
-        };
+        unsafe { intrinsics::volatile_set_memory(next.cast::<u8>().as_ptr(), 0, BLOCK_META_SIZE) };
 
         dprintln!("      -> {} at {:p}", self.as_ref(), self.0);
         Some(self)
@@ -225,6 +223,7 @@ impl fmt::Display for Block {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::ffi::c_void;
 
     fn assert_block(block: BlockPtr, size: usize) {
         assert_eq!(block.size(), size, "block size doesn't match");
@@ -244,9 +243,10 @@ mod tests {
         let ptr = unsafe {
             Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
                 .expect("unable to allocate memory")
+                .cast::<u8>()
         };
         assert_block(BlockPtr::new(ptr, alloc_size), alloc_size);
-        unsafe { libc::free(ptr.as_ptr()) };
+        unsafe { libc::free(ptr.cast::<c_void>().as_ptr()) };
     }
 
     #[test]
@@ -255,18 +255,19 @@ mod tests {
         let ptr = unsafe {
             Unique::new(libc::malloc(BLOCK_META_SIZE + block1_size))
                 .expect("unable to allocate memory")
+                .cast::<u8>()
         };
         let mut block1 = BlockPtr::new(ptr, block1_size);
         assert_block(block1, block1_size);
         let total_size = block1.block_size();
-        assert_eq!(ptr.as_ptr(), block1.as_ptr().cast::<c_void>());
+        assert_eq!(ptr.as_ptr(), block1.as_ptr().cast::<u8>());
 
         // Shrink block1 to 256 bytes
         let mut block2 = block1.shrink(256).expect("split block failed");
         assert_block(block1, 256);
         assert_eq!(
             block1.next_potential_block().as_ptr(),
-            block2.cast::<c_void>().as_ptr()
+            block2.cast::<u8>().as_ptr()
         );
         assert_block(block2, total_size - block1.block_size() - BLOCK_META_SIZE);
 
@@ -275,13 +276,13 @@ mod tests {
         assert_block(block2, 256);
         assert_eq!(
             block2.next_potential_block().as_ptr(),
-            block3.cast::<c_void>().as_ptr()
+            block3.cast::<u8>().as_ptr()
         );
         assert_block(
             block3,
             total_size - block1.block_size() - block2.block_size() - BLOCK_META_SIZE,
         );
-        unsafe { libc::free(ptr.as_ptr()) };
+        unsafe { libc::free(ptr.cast::<c_void>().as_ptr()) };
     }
 
     #[test]
@@ -290,18 +291,19 @@ mod tests {
         let ptr = unsafe {
             Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
                 .expect("unable to allocate memory")
+                .cast::<u8>()
         };
         let mut block = BlockPtr::new(ptr, alloc_size);
         let remaining = block.shrink(240);
 
         // Assert correctness of initial block
-        assert_eq!(ptr.as_ptr(), block.as_ptr().cast::<c_void>());
+        assert_eq!(ptr.as_ptr(), block.as_ptr().cast::<u8>());
         assert_block(block, 256);
 
         // There should be no remaining block
         // since 240 will be aligned to 256 and no space is left.
         assert!(remaining.is_none());
-        unsafe { libc::free(ptr.as_ptr()) };
+        unsafe { libc::free(ptr.cast::<c_void>().as_ptr()) };
     }
 
     #[test]
@@ -310,10 +312,11 @@ mod tests {
         let ptr = unsafe {
             Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
                 .expect("unable to allocate memory")
+                .cast::<u8>()
         };
         let block = BlockPtr::new(ptr, alloc_size);
         assert!(block.as_ref().verify());
-        unsafe { libc::free(ptr.as_ptr()) };
+        unsafe { libc::free(ptr.cast::<c_void>().as_ptr()) };
     }
 
     #[test]
@@ -322,12 +325,13 @@ mod tests {
         let ptr = unsafe {
             Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
                 .expect("unable to allocate memory")
+                .cast::<u8>()
         };
         let mut block = BlockPtr::new(ptr, alloc_size);
         block.as_mut().magic = 0x1234;
         assert_eq!(block.as_ref().verify(), false);
 
-        unsafe { libc::free(ptr.as_ptr()) };
+        unsafe { libc::free(ptr.cast::<c_void>().as_ptr()) };
     }
 
     #[test]
@@ -336,19 +340,20 @@ mod tests {
         let ptr = unsafe {
             Unique::new(libc::malloc(BLOCK_META_SIZE + alloc_size))
                 .expect("unable to allocate memory")
+                .cast::<u8>()
         };
         let block = BlockPtr::new(ptr, alloc_size);
         let mem = block.mem_region();
-        assert!(mem.as_ptr() > block.as_ptr().cast::<c_void>());
+        assert!(mem.as_ptr() > block.as_ptr().cast::<u8>());
         let block2 = BlockPtr::from_mem_region(mem).expect("unable to create from mem region");
         assert_eq!(block, block2);
-        unsafe { libc::free(ptr.as_ptr()) };
+        unsafe { libc::free(ptr.cast::<c_void>().as_ptr()) };
     }
 
     #[test]
     fn test_block_mem_region_err() {
         let region =
-            unsafe { Unique::new_unchecked(mem::align_of::<libc::max_align_t>() as *mut c_void) };
+            unsafe { Unique::new_unchecked(mem::align_of::<libc::max_align_t>() as *mut u8) };
         assert_eq!(BlockPtr::from_mem_region(region), None);
     }
 }

@@ -1,16 +1,5 @@
 use core::alloc::{Layout, LayoutErr};
-use core::{ffi::c_void, intrinsics::unlikely, mem::align_of, ptr::Unique};
-
-/// Wrapper for the kernel sbrk call.
-/// Marked as unsafe because it is not thread safe.
-#[inline]
-pub unsafe fn sbrk(size: isize) -> Option<Unique<c_void>> {
-    let ptr = libc::sbrk(size);
-    if unlikely(ptr == -1_isize as *mut c_void) {
-        return None;
-    }
-    Unique::new(ptr)
-}
+use core::mem::align_of;
 
 /// Aligns passed value to be at lest the size of the
 /// largest scalar type `libc::max_align_t` and returns it.
@@ -72,17 +61,5 @@ mod tests {
     #[test]
     fn test_pad_to_scalar_err() {
         assert!(pad_to_scalar(usize::max_value() - 14).is_err());
-    }
-
-    #[test]
-    fn test_sbrk_ok() {
-        unsafe { assert!(sbrk(0).is_some()) };
-    }
-
-    #[test]
-    fn test_sbrk_err() {
-        unsafe {
-            assert!(sbrk(isize::min_value()).is_none());
-        }
     }
 }

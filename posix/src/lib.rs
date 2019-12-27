@@ -72,7 +72,7 @@ pub unsafe extern "C" fn malloc_usable_size(ptr: *mut c_void) -> usize {
     }
 
     // Its safe to use Unique_unchecked since we already checked for null pointers.
-    let block = match BlockPtr::from_mem_region(Unique::new_unchecked(ptr)) {
+    let block = match BlockPtr::from_mem_region(Unique::new_unchecked(ptr.cast::<u8>())) {
         Some(b) => b,
         None => return 0,
     };

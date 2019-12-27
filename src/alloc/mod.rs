@@ -1,5 +1,5 @@
 use core::alloc::{GlobalAlloc, Layout};
-use core::{cmp, ffi::c_void, intrinsics, intrinsics::unlikely, ptr::null_mut, ptr::Unique};
+use core::{cmp, intrinsics, intrinsics::unlikely, ptr::null_mut, ptr::Unique};
 
 use libc_print::libc_eprintln;
 use spin::Mutex;
@@ -72,14 +72,14 @@ unsafe impl GlobalAlloc for Collam {
             size,
             block.as_ref()
         );
-        block.mem_region().cast::<u8>().as_ptr()
+        block.mem_region().as_ptr()
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         if let Some(p) = Unique::new(ptr) {
             dprintln!("[libcollam.so]: dealloc(ptr={:p})", ptr);
 
-            let block = match BlockPtr::from_mem_region(p.cast::<c_void>()) {
+            let block = match BlockPtr::from_mem_region(p) {
                 Some(b) => b,
                 None => return,
             };
@@ -94,7 +94,7 @@ unsafe impl GlobalAlloc for Collam {
 
     unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8 {
         let ptr = match Unique::new(ptr) {
-            Some(p) => p.cast::<c_void>(),
+            Some(p) => p,
             None => return null_mut(),
         };
 
@@ -123,16 +123,16 @@ unsafe impl GlobalAlloc for Collam {
         match new_layout.size().cmp(&old_block.size()) {
             cmp::Ordering::Equal => {
                 // Just return pointer if size didn't change.
-                ptr.cast::<u8>().as_ptr()
+                ptr.as_ptr()
             }
             cmp::Ordering::Greater => {
                 // Allocate new region to fit size.
-                let new_ptr = self.alloc(new_layout).cast::<c_void>();
+                let new_ptr = self.alloc(new_layout);
                 let copy_size = cmp::min(new_layout.size(), old_block.size());
                 intrinsics::volatile_copy_nonoverlapping_memory(new_ptr, ptr.as_ptr(), copy_size);
                 // Add old block back to heap structure.
                 self.release_block(old_block);
-                new_ptr.cast::<u8>()
+                new_ptr
             }
             cmp::Ordering::Less => {
                 // Shrink allocated block if size is smaller.
@@ -140,7 +140,7 @@ unsafe impl GlobalAlloc for Collam {
                 if let Some(rem_block) = old_block.shrink(size) {
                     self.release_block(rem_block);
                 }
-                ptr.cast::<u8>().as_ptr()
+                ptr.as_ptr()
             }
         }
     }
