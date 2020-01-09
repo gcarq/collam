@@ -9,15 +9,16 @@ extern crate collam;
 use core::alloc::{GlobalAlloc, Layout};
 use core::intrinsics::{abort, unlikely};
 use core::ptr::{null_mut, Unique};
-use core::{ffi::c_void, mem, panic};
+use core::{ffi::c_void, panic};
 
 use collam::alloc::{block::BlockPtr, Collam};
+use collam::MIN_ALIGN;
 
 static COLLAM: Collam = Collam::new();
 
 #[no_mangle]
 pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
-    let layout = Layout::from_size_align_unchecked(size, mem::align_of::<libc::max_align_t>());
+    let layout = Layout::from_size_align_unchecked(size, MIN_ALIGN);
     COLLAM.alloc(layout).cast::<c_void>()
 }
 
@@ -33,8 +34,7 @@ pub unsafe extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
             return null_mut();
         }
     };
-    let layout =
-        Layout::from_size_align_unchecked(total_size, mem::align_of::<libc::max_align_t>());
+    let layout = Layout::from_size_align_unchecked(total_size, MIN_ALIGN);
     COLLAM.alloc_zeroed(layout).cast::<c_void>()
 }
 
@@ -42,12 +42,12 @@ pub unsafe extern "C" fn calloc(nobj: usize, size: usize) -> *mut c_void {
 pub unsafe extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
     if p.is_null() {
         // If ptr is NULL, then the call is equivalent to malloc(size), for all values of size.
-        let layout = Layout::from_size_align_unchecked(size, mem::align_of::<libc::max_align_t>());
+        let layout = Layout::from_size_align_unchecked(size, MIN_ALIGN);
         return COLLAM.alloc(layout).cast::<c_void>();
     }
 
     let p = p.cast::<u8>();
-    let layout = Layout::from_size_align_unchecked(0, mem::align_of::<libc::max_align_t>());
+    let layout = Layout::from_size_align_unchecked(0, MIN_ALIGN);
 
     if size == 0 {
         // If size is equal to zero, and ptr is not NULL,
@@ -61,7 +61,7 @@ pub unsafe extern "C" fn realloc(p: *mut c_void, size: usize) -> *mut c_void {
 
 #[no_mangle]
 pub unsafe extern "C" fn free(ptr: *mut c_void) {
-    let layout = Layout::from_size_align_unchecked(0, mem::align_of::<libc::max_align_t>());
+    let layout = Layout::from_size_align_unchecked(0, MIN_ALIGN);
     COLLAM.dealloc(ptr.cast::<u8>(), layout)
 }
 
