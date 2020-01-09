@@ -42,7 +42,7 @@ unsafe impl GlobalAlloc for Collam {
             return null_mut();
         }
 
-        let layout = match util::pad_to_scalar(layout.size()) {
+        let layout = match util::pad_min_align(layout.size()) {
             Ok(l) => l,
             Err(_) => return null_mut(),
         };
@@ -101,7 +101,7 @@ unsafe impl GlobalAlloc for Collam {
         dprintln!("[libcollam.so]: realloc(ptr={:p}, size={})", ptr, new_size);
 
         // FIXME: Alignment  to old layout needed?
-        let new_layout = match util::pad_to_scalar(new_size) {
+        let new_layout = match util::pad_min_align(new_size) {
             Ok(l) => l,
             Err(_) => return null_mut(),
         };
@@ -157,7 +157,7 @@ mod tests {
     fn test_collam_alloc_ok() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(123).expect("unable to align layout");
+            let layout = util::pad_min_align(123).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
             write_bytes(ptr, 1, 123);
@@ -169,7 +169,7 @@ mod tests {
     fn test_collam_alloc_zero_size() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(0).expect("unable to align layout");
+            let layout = util::pad_min_align(0).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(ptr.is_null());
         }
@@ -179,7 +179,7 @@ mod tests {
     fn test_collam_realloc_bigger_size() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(16).expect("unable to align layout");
+            let layout = util::pad_min_align(16).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
 
@@ -193,7 +193,7 @@ mod tests {
     fn test_collam_realloc_smaller_size() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(512).expect("unable to align layout");
+            let layout = util::pad_min_align(512).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
 
@@ -207,7 +207,7 @@ mod tests {
     fn test_collam_realloc_same_size() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(512).expect("unable to align layout");
+            let layout = util::pad_min_align(512).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
             let ptr2 = collam.realloc(ptr, layout, 512);
@@ -221,7 +221,7 @@ mod tests {
     fn test_collam_realloc_null() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(16).expect("unable to align layout");
+            let layout = util::pad_min_align(16).expect("unable to align layout");
             let ptr = collam.realloc(null_mut(), layout, 789);
             assert_eq!(ptr, null_mut());
         }
@@ -231,7 +231,7 @@ mod tests {
     fn test_collam_dealloc_null() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(16).expect("unable to align layout");
+            let layout = util::pad_min_align(16).expect("unable to align layout");
             collam.dealloc(null_mut(), layout);
         }
     }
@@ -240,7 +240,7 @@ mod tests {
     fn test_collam_realloc_memory_corruption() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(16).expect("unable to align layout");
+            let layout = util::pad_min_align(16).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
 
@@ -263,7 +263,7 @@ mod tests {
     fn test_collam_dealloc_memory_corruption() {
         unsafe {
             let collam = Collam::new();
-            let layout = util::pad_to_scalar(32).expect("unable to align layout");
+            let layout = util::pad_min_align(32).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
 

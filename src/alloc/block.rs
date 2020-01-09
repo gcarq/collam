@@ -2,17 +2,16 @@ use core::{fmt, intrinsics, mem, ptr::Unique};
 
 use libc_print::libc_eprintln;
 
-use crate::util;
+use crate::{util, MIN_ALIGN};
 
 /// The required block size to store the bare minimum of metadata (size + magic values).
-pub const BLOCK_META_SIZE: usize = util::align_scalar_unchecked(mem::align_of::<usize>() * 2);
+pub const BLOCK_META_SIZE: usize = util::min_align_unchecked(mem::align_of::<usize>() * 2);
 /// The minimum region size to save intrusive data structures if not allocated by the user.
 pub const BLOCK_MIN_REGION_SIZE: usize =
-    util::align_scalar_unchecked(mem::align_of::<Option<BlockPtr>>() * 2);
+    util::min_align_unchecked(mem::align_of::<Option<BlockPtr>>() * 2);
 /// Defines the minimum remaining size of a block to consider splitting it.
-pub const BLOCK_SPLIT_MIN_SIZE: usize = util::align_scalar_unchecked(
-    BLOCK_META_SIZE + BLOCK_MIN_REGION_SIZE + mem::align_of::<libc::max_align_t>(),
-);
+pub const BLOCK_SPLIT_MIN_SIZE: usize =
+    util::min_align_unchecked(BLOCK_META_SIZE + BLOCK_MIN_REGION_SIZE + MIN_ALIGN);
 
 const BLOCK_MAGIC_FREE: u16 = 0xDEAD;
 
@@ -24,7 +23,7 @@ pub struct BlockPtr(Unique<Block>);
 impl BlockPtr {
     /// Creates a `Block` instance at the given raw pointer for the specified size.
     pub fn new(ptr: Unique<u8>, size: usize) -> Self {
-        debug_assert_eq!(size, util::pad_to_scalar(size).unwrap().size());
+        debug_assert_eq!(size, util::pad_min_align(size).unwrap().size());
         let ptr = ptr.cast::<Block>();
         unsafe { *ptr.as_ptr() = Block::new(size) };
         BlockPtr(ptr)
@@ -104,7 +103,7 @@ impl BlockPtr {
         dprintln!("[split]: {} at {:p}", self.as_ref(), self.0);
         debug_assert_eq!(
             size,
-            util::pad_to_scalar(size).expect("unable to align").size()
+            util::pad_min_align(size).expect("unable to align").size()
         );
         // Check if its possible to split the block with the requested size
         let rem_block_size = self.size().checked_sub(size + BLOCK_META_SIZE)?;
@@ -352,8 +351,7 @@ mod tests {
 
     #[test]
     fn test_block_mem_region_err() {
-        let region =
-            unsafe { Unique::new_unchecked(mem::align_of::<libc::max_align_t>() as *mut u8) };
+        let region = unsafe { Unique::new_unchecked(16 as *mut u8) };
         assert_eq!(BlockPtr::from_mem_region(region), None);
     }
 }

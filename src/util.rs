@@ -1,20 +1,17 @@
+use crate::MIN_ALIGN;
 use core::alloc::{Layout, LayoutErr};
-use core::mem::align_of;
 
-/// Aligns passed value to be at lest the size of the
-/// largest scalar type `libc::max_align_t` and returns it.
+/// Aligns passed value to be at lest the size of `MIN_ALIGN` and returns it.
 /// NOTE: not checked for overflows!
 #[inline]
-pub const fn align_scalar_unchecked(val: usize) -> usize {
-    let align = align_of::<libc::max_align_t>();
-    (val + align - 1) & !(align - 1)
+pub const fn min_align_unchecked(val: usize) -> usize {
+    (val + MIN_ALIGN - 1) & !(MIN_ALIGN - 1)
 }
 
-/// Returns a `Layout` padded to the largest
-/// possible scalar for the current architecture.
+/// Returns a `Layout` padded to `MIN_ALIGN`.
 #[inline]
-pub fn pad_to_scalar(size: usize) -> Result<Layout, LayoutErr> {
-    Ok(Layout::from_size_align(size, align_of::<libc::max_align_t>())?.pad_to_align())
+pub fn pad_min_align(size: usize) -> Result<Layout, LayoutErr> {
+    pad_to_align(size, MIN_ALIGN)
 }
 
 /// Returns a `Layout` padded to align.
@@ -28,10 +25,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_align_scalar_unchecked() {
-        let align = align_of::<libc::max_align_t>();
+    fn test_min_align_unchecked() {
         for val in [0, 5, 491, 5910, 15290, 501920].iter() {
-            assert_eq!(align_scalar_unchecked(*val) % align, 0);
+            assert_eq!(min_align_unchecked(*val) % MIN_ALIGN, 0);
         }
     }
 
@@ -50,16 +46,15 @@ mod tests {
     }
 
     #[test]
-    fn test_pad_to_scalar_ok() {
-        let align = align_of::<libc::max_align_t>();
+    fn test_pad_min_align_ok() {
         for val in [0, 5, 491, 5910, 15290, 501920].iter() {
-            let layout = pad_to_scalar(*val).expect("unable to align");
-            assert_eq!(layout.size() % align, 0);
+            let layout = pad_min_align(*val).expect("unable to align");
+            assert_eq!(layout.size() % MIN_ALIGN, 0);
         }
     }
 
     #[test]
-    fn test_pad_to_scalar_err() {
-        assert!(pad_to_scalar(usize::max_value() - 14).is_err());
+    fn test_pad_min_align_err() {
+        assert!(pad_min_align(usize::max_value() - 14).is_err());
     }
 }

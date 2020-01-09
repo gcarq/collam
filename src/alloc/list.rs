@@ -144,12 +144,12 @@ impl IntrusiveList {
     /// Checks if head or tail should be updated with the given `BlockPtr`.
     unsafe fn update_ends(&mut self, block: BlockPtr) {
         // Update head if necessary
-        if block.as_ref().prev.is_none() {
+        if unlikely(block.as_ref().prev.is_none()) {
             self.head = Some(block);
         }
 
         // Update tail if necessary
-        if block.as_ref().next.is_none() {
+        if unlikely(block.as_ref().next.is_none()) {
             self.tail = Some(block);
         }
     }
@@ -186,13 +186,13 @@ impl IntrusiveList {
     unsafe fn remove(&mut self, mut elem: BlockPtr) -> BlockPtr {
         // Update head
         if let Some(head) = self.head {
-            if elem == head {
+            if unlikely(elem == head) {
                 self.head = elem.as_ref().next;
             }
         }
         // Update tail
         if let Some(tail) = self.tail {
-            if elem == tail {
+            if unlikely(elem == tail) {
                 self.tail = elem.as_ref().prev;
             }
         }
