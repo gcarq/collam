@@ -1,7 +1,5 @@
 #![feature(core_intrinsics)]
 #![feature(ptr_internals)]
-#![feature(alloc_layout_extra)]
-#![feature(const_fn)]
 #![no_std]
 
 #[macro_use]
@@ -18,6 +16,7 @@ extern crate std;
 use libc_print::libc_eprintln;
 
 mod macros;
+
 pub mod alloc;
 mod sources;
 mod util;

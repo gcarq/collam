@@ -101,13 +101,9 @@ pub extern "C" fn mallopt(param: i32, value: i32) -> i32 {
 #[panic_handler]
 fn panic(info: &panic::PanicInfo) -> ! {
     eprintln!("[libcollam.so]: panic occurred: {:?}", info);
-    unsafe { abort() };
+    abort()
 }
 
 #[cfg(not(test))]
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {}
-
-#[cfg(not(test))]
-#[lang = "eh_unwind_resume"]
-extern "C" fn eh_unwind_resume() {}
