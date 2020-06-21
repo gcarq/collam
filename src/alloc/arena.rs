@@ -4,12 +4,12 @@ use crate::alloc::block::BlockPtr;
 use crate::alloc::list::IntrusiveList;
 use crate::sources::{DataSegment, MemorySource};
 
-pub struct Heap {
+pub struct Arena {
     pub list: IntrusiveList,
     source: DataSegment,
 }
 
-impl Heap {
+impl Arena {
     pub const fn new() -> Self {
         Self {
             list: IntrusiveList::new(),
@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn test_request_block() {
         unsafe {
-            let mut heap = Heap::new();
+            let mut heap = Arena::new();
             let block = heap.request(256).expect("unable to request block");
             let brk = block.next_potential_block().as_ptr();
             assert_eq!(brk.cast::<c_void>(), sbrk(0));
@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn test_request_block_split() {
         unsafe {
-            let mut heap = Heap::new();
+            let mut heap = Arena::new();
             let rem_block = heap
                 .request(256)
                 .expect("unable to request block")

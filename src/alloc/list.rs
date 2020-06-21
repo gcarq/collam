@@ -228,8 +228,8 @@ impl Iterator for Iter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alloc::arena::Arena;
     use crate::alloc::block::BLOCK_META_SIZE;
-    use crate::alloc::heap::Heap;
 
     #[test]
     fn test_list_new() {
@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_insert_after_no_merge() {
-        let mut heap = Heap::new();
+        let mut heap = Arena::new();
         let mut block = unsafe { heap.request(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_insert_before_no_merge() {
-        let mut heap = Heap::new();
+        let mut heap = Arena::new();
         let mut block = unsafe { heap.request(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_insert_merge() {
-        let mut heap = Heap::new();
+        let mut heap = Arena::new();
         let mut block = unsafe { heap.request(256).expect("unable to request block") };
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
@@ -322,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_pop_exact_size() {
-        let mut heap = Heap::new();
+        let mut heap = Arena::new();
         let mut block = unsafe { heap.request(512).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_pop_smaller_size() {
-        let mut heap = Heap::new();
+        let mut heap = Arena::new();
         let mut block = unsafe { heap.request(512).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn test_iter() {
-        let mut heap = Heap::new();
+        let mut heap = Arena::new();
         let mut block = unsafe { heap.request(256).expect("unable to request block") };
         let mut block2 = block.shrink(64).expect("unable to split block");
         let block3 = block2.shrink(64).expect("unable to split block");
@@ -381,7 +381,7 @@ mod tests {
     #[cfg(feature = "debug")]
     #[test]
     fn test_debug() {
-        let mut heap = Heap::new();
+        let mut heap = Arena::new();
         let mut block = unsafe { heap.request(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
         let mut block2 = block.shrink(64).expect("unable to split block");
