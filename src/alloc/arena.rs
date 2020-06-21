@@ -2,18 +2,18 @@ use libc_print::libc_eprintln;
 
 use crate::alloc::block::BlockPtr;
 use crate::alloc::list::IntrusiveList;
-use crate::sources::{DataSegment, MemorySource};
+use crate::sources::{HeapSegment, MemorySource};
 
 pub struct Arena {
     pub list: IntrusiveList,
-    source: DataSegment,
+    source: HeapSegment,
 }
 
 impl Arena {
     pub const fn new() -> Self {
         Self {
             list: IntrusiveList::new(),
-            source: DataSegment,
+            source: HeapSegment,
         }
     }
 

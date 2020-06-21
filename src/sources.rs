@@ -19,11 +19,11 @@ pub trait MemorySource {
     unsafe fn release(&mut self, block: BlockPtr) -> bool;
 }
 
-/// Defines data segment as memory source.
+/// Defines heap segment as memory source.
 /// Makes use of brk(2).
-pub struct DataSegment;
+pub struct HeapSegment;
 
-impl DataSegment {
+impl HeapSegment {
     /// Wrapper for the kernel sbrk call.
     ///
     /// # Safety
@@ -40,7 +40,7 @@ impl DataSegment {
     }
 }
 
-impl MemorySource for DataSegment {
+impl MemorySource for HeapSegment {
     /// # Safety
     ///
     /// Function is not thread safe.
@@ -80,13 +80,13 @@ mod tests {
 
     #[test]
     fn test_sbrk_ok() {
-        unsafe { assert!(DataSegment::sbrk(0).is_some()) };
+        unsafe { assert!(HeapSegment::sbrk(0).is_some()) };
     }
 
     #[test]
     fn test_sbrk_err() {
         unsafe {
-            assert!(DataSegment::sbrk(isize::min_value()).is_none());
+            assert!(HeapSegment::sbrk(isize::min_value()).is_none());
         }
     }
 }
