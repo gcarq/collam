@@ -1,5 +1,3 @@
-use core::intrinsics::unlikely;
-
 use libc_print::libc_eprintln;
 
 use crate::alloc::block::{BlockPtr, BLOCK_SPLIT_MIN_SIZE};
@@ -12,7 +10,7 @@ pub struct IntrusiveList {
 
 impl IntrusiveList {
     pub const fn new() -> Self {
-        IntrusiveList {
+        Self {
             head: None,
             tail: None,
         }
@@ -20,12 +18,12 @@ impl IntrusiveList {
 
     /// Inserts a `BlockPtr` to the existing list and
     /// returns `Err` on detected double-free.
-    pub unsafe fn insert(&mut self, mut to_insert: BlockPtr) -> Result<(), ()> {
+    pub fn insert(&mut self, mut to_insert: BlockPtr) -> Result<(), ()> {
         // Reset pointer locations since they were part as user allocatable data
         to_insert.as_mut().unlink();
 
         // Add initial element
-        if unlikely(self.head.is_none()) {
+        if self.head.is_none() {
             debug_assert!(self.tail.is_none());
             self.head = Some(to_insert);
             self.tail = Some(to_insert);
@@ -47,25 +45,23 @@ impl IntrusiveList {
     /// Removes and returns the first suitable `BlockPtr`.
     pub fn pop(&mut self, size: usize) -> Option<BlockPtr> {
         for block in self.iter() {
-            unsafe {
-                if size == block.size() {
-                    dprintln!(
-                        "[libcollam.so]: found perfect {} at {:p} for size {}",
-                        block.as_ref(),
-                        block,
-                        size
-                    );
-                    return Some(self.remove(block));
-                }
-                if size + BLOCK_SPLIT_MIN_SIZE <= block.size() {
-                    dprintln!(
-                        "[libcollam.so]: found suitable {} at {:p} for size {}",
-                        block.as_ref(),
-                        block,
-                        size
-                    );
-                    return Some(self.remove(block));
-                }
+            if size == block.size() {
+                dprintln!(
+                    "[libcollam.so]: found perfect {} at {:p} for size {}",
+                    block.as_ref(),
+                    block,
+                    size
+                );
+                return Some(self.remove(block));
+            }
+            if size + BLOCK_SPLIT_MIN_SIZE <= block.size() {
+                dprintln!(
+                    "[libcollam.so]: found suitable {} at {:p} for size {}",
+                    block.as_ref(),
+                    block,
+                    size
+                );
+                return Some(self.remove(block));
             }
         }
         None
@@ -112,7 +108,7 @@ impl IntrusiveList {
     }
 
     /// Adds a `BlockPtr` to the list before the given anchor.
-    unsafe fn insert_before(mut anchor: BlockPtr, mut to_insert: BlockPtr) {
+    fn insert_before(mut anchor: BlockPtr, mut to_insert: BlockPtr) {
         // Update links in new block
         to_insert.as_mut().prev = anchor.as_ref().prev;
         to_insert.as_mut().next = Some(anchor);
@@ -127,7 +123,7 @@ impl IntrusiveList {
     }
 
     /// Adds a `BlockPtr` to the list after the given anchor.
-    unsafe fn insert_after(mut anchor: BlockPtr, mut to_insert: BlockPtr) {
+    fn insert_after(mut anchor: BlockPtr, mut to_insert: BlockPtr) {
         // Update links in new block
         to_insert.as_mut().next = anchor.as_ref().next;
         to_insert.as_mut().prev = Some(anchor);
@@ -142,21 +138,21 @@ impl IntrusiveList {
     }
 
     /// Checks if head or tail should be updated with the given `BlockPtr`.
-    unsafe fn update_ends(&mut self, block: BlockPtr) {
+    fn update_ends(&mut self, block: BlockPtr) {
         // Update head if necessary
-        if unlikely(block.as_ref().prev.is_none()) {
+        if block.as_ref().prev.is_none() {
             self.head = Some(block);
         }
 
         // Update tail if necessary
-        if unlikely(block.as_ref().next.is_none()) {
+        if block.as_ref().next.is_none() {
             self.tail = Some(block);
         }
     }
 
     /// Takes a `BlockPtr` and tries to merge adjacent blocks if possible.
     /// Always returns a `BlockPtr`.
-    unsafe fn maybe_merge_adjacent(block: BlockPtr) -> BlockPtr {
+    fn maybe_merge_adjacent(block: BlockPtr) -> BlockPtr {
         let block = match block.as_ref().prev {
             Some(prev) => prev.maybe_merge_next().unwrap_or(block),
             None => block,
@@ -183,16 +179,16 @@ impl IntrusiveList {
     }
 
     /// Removes the given `BlockPtr` from list and returns it.
-    unsafe fn remove(&mut self, mut elem: BlockPtr) -> BlockPtr {
+    fn remove(&mut self, mut elem: BlockPtr) -> BlockPtr {
         // Update head
         if let Some(head) = self.head {
-            if unlikely(elem == head) {
+            if elem == head {
                 self.head = elem.as_ref().next;
             }
         }
         // Update tail
         if let Some(tail) = self.tail {
-            if unlikely(elem == tail) {
+            if elem == tail {
                 self.tail = elem.as_ref().prev;
             }
         }
@@ -251,14 +247,14 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { heap.list.insert(block).expect("unable to insert") };
+        heap.list.insert(block).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
         assert_eq!(heap.list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
         assert_eq!(block.as_ref().prev, None);
 
         // Insert block3
-        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        heap.list.insert(block3).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
         assert_eq!(heap.list.tail, Some(block3));
         assert_eq!(block.as_ref().next, Some(block3));
@@ -276,14 +272,14 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block3
-        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        heap.list.insert(block3).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block3));
         assert_eq!(heap.list.tail, Some(block3));
         assert_eq!(block3.as_ref().next, None);
         assert_eq!(block3.as_ref().prev, None);
 
         // Insert block1
-        unsafe { heap.list.insert(block).expect("unable to insert") };
+        heap.list.insert(block).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
         assert_eq!(heap.list.tail, Some(block3));
         assert_eq!(block.as_ref().next, Some(block3));
@@ -300,7 +296,7 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { heap.list.insert(block).expect("unable to insert") };
+        heap.list.insert(block).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
         assert_eq!(heap.list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
@@ -308,7 +304,7 @@ mod tests {
         assert_eq!(block.size(), 64);
 
         // Insert block2
-        unsafe { heap.list.insert(block2).expect("unable to insert") };
+        heap.list.insert(block2).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
         assert_eq!(heap.list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
@@ -316,7 +312,7 @@ mod tests {
         assert_eq!(block.size(), 64 + BLOCK_META_SIZE + 64);
 
         // Insert block3
-        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        heap.list.insert(block3).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
         assert_eq!(heap.list.tail, Some(block));
         assert_eq!(block.as_ref().next, None);
@@ -333,9 +329,9 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { heap.list.insert(block).expect("unable to insert") };
+        heap.list.insert(block).expect("unable to insert");
         // Insert block3
-        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        heap.list.insert(block3).expect("unable to insert");
 
         let result = heap.list.pop(64).expect("got no block");
         assert_eq!(result, block);
@@ -353,9 +349,9 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { heap.list.insert(block).expect("unable to insert") };
+        heap.list.insert(block).expect("unable to insert");
         // Insert block3
-        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        heap.list.insert(block3).expect("unable to insert");
 
         let result = heap.list.pop(16).expect("got no block");
         assert_eq!(result, block);
@@ -372,9 +368,9 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { heap.list.insert(block).expect("unable to insert") };
+        heap.list.insert(block).expect("unable to insert");
         // Insert block3
-        unsafe { heap.list.insert(block3).expect("unable to insert") };
+        heap.list.insert(block3).expect("unable to insert");
 
         let mut iter = heap.list.iter();
         assert_eq!(iter.next().unwrap(), block);
@@ -392,9 +388,9 @@ mod tests {
         let block3 = block2.shrink(64).expect("unable to split block");
 
         // Insert block1
-        unsafe { heap.list.insert(block).expect("unable to insert") };
+        heap.list.insert(block).expect("unable to insert");
         // Insert block3
-        unsafe { heap.list.insert(block3).expect("unable to insert") };
-        heap.list.debug()
+        heap.list.insert(block3).expect("unable to insert");
+        heap.list.debug();
     }
 }

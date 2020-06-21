@@ -1,5 +1,5 @@
 use core::alloc::{GlobalAlloc, Layout};
-use core::{cmp, intrinsics, intrinsics::unlikely, ptr::null_mut, ptr::Unique};
+use core::{cmp, intrinsics, ptr::null_mut, ptr::Unique};
 
 use libc_print::libc_eprintln;
 use spin::Mutex;
@@ -17,26 +17,60 @@ pub struct Collam {
 }
 
 impl Collam {
+    #[must_use]
     pub const fn new() -> Self {
-        Collam {
+        Self {
             heap: spin::Mutex::new(Heap::new()),
         }
     }
 
     /// Requests and returns suitable empty `BlockPtr`.
     #[inline]
-    unsafe fn request_block(&self, size: usize) -> Option<BlockPtr> {
-        self.heap.lock().request(size)
+    fn request_block(&self, size: usize) -> Option<BlockPtr> {
+        // SAFETY: we know it is thread safe, because we're locking the mutex
+        unsafe { self.heap.lock().request(size) }
     }
 
     /// Releases the given `BlockPtr` back to the allocator.
     #[inline]
-    unsafe fn release_block(&self, block: BlockPtr) {
-        self.heap.lock().release(block)
+    fn release_block(&self, block: BlockPtr) {
+        // SAFETY: we know it is thread safe, because we're locking the mutex
+        unsafe { self.heap.lock().release(block) }
     }
 }
 
 unsafe impl GlobalAlloc for Collam {
+    /// Allocate memory as described by the given `layout`.
+    ///
+    /// Returns a pointer to newly-allocated memory,
+    /// or null to indicate allocation failure.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because undefined behavior can result
+    /// if the caller does not ensure that `layout` has non-zero size.
+    ///
+    /// (Extension subtraits might provide more specific bounds on
+    /// behavior, e.g., guarantee a sentinel address or a null pointer
+    /// in response to a zero-size allocation request.)
+    ///
+    /// The allocated block of memory may or may not be initialized.
+    ///
+    /// # Errors
+    ///
+    /// Returning a null pointer indicates that either memory is exhausted
+    /// or `layout` does not meet this allocator's size or alignment constraints.
+    ///
+    /// Implementations are encouraged to return null on memory
+    /// exhaustion rather than aborting, but this is not
+    /// a strict requirement. (Specifically: it is *legal* to
+    /// implement this trait atop an underlying native allocation
+    /// library that aborts on memory exhaustion.)
+    ///
+    /// Clients wishing to abort computation in response to an
+    /// allocation error are encouraged to call the [`handle_alloc_error`] function,
+    /// rather than directly invoking `panic!` or similar.
+    ///
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if layout.size() == 0 {
             return null_mut();
@@ -75,6 +109,18 @@ unsafe impl GlobalAlloc for Collam {
         block.mem_region().as_ptr()
     }
 
+    /// Deallocate the block of memory at the given `ptr` pointer with the given `layout`.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because undefined behavior can result
+    /// if the caller does not ensure all of the following:
+    ///
+    /// * `ptr` must denote a block of memory currently allocated via
+    ///   this allocator,
+    ///
+    /// * `layout` must be the same layout that was used
+    ///   to allocate that block of memory,
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         if let Some(p) = Unique::new(ptr) {
             dprintln!("[libcollam.so]: dealloc(ptr={:p})", ptr);
@@ -83,7 +129,7 @@ unsafe impl GlobalAlloc for Collam {
                 Some(b) => b,
                 None => return,
             };
-            if unlikely(!block.as_ref().verify()) {
+            if !block.as_ref().verify() {
                 eprintln!("free(): Unable to verify {} at {:p}", block.as_ref(), block);
                 return;
             }
@@ -92,6 +138,55 @@ unsafe impl GlobalAlloc for Collam {
         }
     }
 
+    /// Shrink or grow a block of memory to the given `new_size`.
+    /// The block is described by the given `ptr` pointer and `layout`.
+    ///
+    /// If this returns a non-null pointer, then ownership of the memory block
+    /// referenced by `ptr` has been transferred to this allocator.
+    /// The memory may or may not have been deallocated,
+    /// and should be considered unusable (unless of course it was
+    /// transferred back to the caller again via the return value of
+    /// this method). The new memory block is allocated with `layout`, but
+    /// with the `size` updated to `new_size`.
+    ///
+    /// If this method returns null, then ownership of the memory
+    /// block has not been transferred to this allocator, and the
+    /// contents of the memory block are unaltered.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because undefined behavior can result
+    /// if the caller does not ensure all of the following:
+    ///
+    /// * `ptr` must be currently allocated via this allocator,
+    ///
+    /// * `layout` must be the same layout that was used
+    ///   to allocate that block of memory,
+    ///
+    /// * `new_size` must be greater than zero.
+    ///
+    /// * `new_size`, when rounded up to the nearest multiple of `layout.align()`,
+    ///   must not overflow (i.e., the rounded value must be less than `usize::MAX`).
+    ///
+    /// (Extension subtraits might provide more specific bounds on
+    /// behavior, e.g., guarantee a sentinel address or a null pointer
+    /// in response to a zero-size allocation request.)
+    ///
+    /// # Errors
+    ///
+    /// Returns null if the new layout does not meet the size
+    /// and alignment constraints of the allocator, or if reallocation
+    /// otherwise fails.
+    ///
+    /// Implementations are encouraged to return null on memory
+    /// exhaustion rather than panicking or aborting, but this is not
+    /// a strict requirement. (Specifically: it is *legal* to
+    /// implement this trait atop an underlying native allocation
+    /// library that aborts on memory exhaustion.)
+    ///
+    /// Clients wishing to abort computation in response to a
+    /// reallocation error are encouraged to call the [`handle_alloc_error`] function,
+    /// rather than directly invoking `panic!` or similar.
     unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, new_size: usize) -> *mut u8 {
         let ptr = match Unique::new(ptr) {
             Some(p) => p,
@@ -111,7 +206,7 @@ unsafe impl GlobalAlloc for Collam {
             None => return null_mut(),
         };
 
-        if unlikely(!old_block.as_ref().verify()) {
+        if !old_block.as_ref().verify() {
             eprintln!(
                 "realloc(): Unable to verify {} at {:p}",
                 old_block.as_ref(),

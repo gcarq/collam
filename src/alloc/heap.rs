@@ -11,7 +11,7 @@ pub struct Heap {
 
 impl Heap {
     pub const fn new() -> Self {
-        Heap {
+        Self {
             list: IntrusiveList::new(),
             source: DataSegment,
         }
@@ -19,6 +19,10 @@ impl Heap {
 
     /// Requests and returns a suitable empty `BlockPtr` for the given size.
     /// This can be either a reused empty block or a new one requested from kernel.
+    ///
+    /// # Safety
+    ///
+    /// Function is not thread safe.
     pub unsafe fn request(&mut self, size: usize) -> Option<BlockPtr> {
         if let Some(block) = self.list.pop(size) {
             dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
@@ -28,6 +32,10 @@ impl Heap {
     }
 
     /// Releases a given `BlockPtr` back to the allocator or kernel.
+    ///
+    /// # Safety
+    ///
+    /// Function is not thread safe.
     pub unsafe fn release(&mut self, block: BlockPtr) {
         #[cfg(feature = "debug")]
         self.list.debug();

@@ -2,6 +2,8 @@
 #![feature(ptr_internals)]
 #![no_std]
 
+//#![warn(clippy::pedantic)]
+
 #[macro_use]
 extern crate lazy_static;
 extern crate libc;

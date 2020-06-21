@@ -22,14 +22,16 @@ pub struct BlockPtr(Unique<Block>);
 
 impl BlockPtr {
     /// Creates a `Block` instance at the given raw pointer for the specified size.
+    #[must_use]
     pub fn new(ptr: Unique<u8>, size: usize) -> Self {
         debug_assert_eq!(size, util::pad_min_align(size).unwrap().size());
         let ptr = ptr.cast::<Block>();
         unsafe { *ptr.as_ptr() = Block::new(size) };
-        BlockPtr(ptr)
+        Self(ptr)
     }
 
     /// Returns an existing `BlockPtr` instance from the given memory region raw pointer
+    #[must_use]
     pub fn from_mem_region(ptr: Unique<u8>) -> Option<Self> {
         let block_ptr = unsafe { ptr.as_ptr().sub(BLOCK_META_SIZE).cast::<Block>() };
         Some(BlockPtr(Unique::new(block_ptr)?))
@@ -38,6 +40,8 @@ impl BlockPtr {
     /// Returns a pointer to the assigned memory region for the given block
     pub fn mem_region(self) -> Unique<u8> {
         debug_assert!(self.as_ref().verify());
+        // SAFETY: we know the pointer can't be null
+        // SAFETY: it should be safe to assume the associated memory region is not corrupt
         unsafe { Unique::new_unchecked(self.as_ptr().cast::<u8>().add(BLOCK_META_SIZE)) }
     }
 
@@ -50,13 +54,19 @@ impl BlockPtr {
     /// Casts to a pointer of another type.
     #[inline]
     pub const fn cast<U>(self) -> Unique<U> {
+        // SAFETY: we know `Unique<Block>` can't be null
         unsafe { Unique::new_unchecked(self.as_ptr() as *mut U) }
     }
 
     /// Returns a pointer where the next `Block` would start.
+    ///
+    /// # Safety
+    ///
+    /// Caller must verify if returned pointer is in bounds.
     #[inline]
-    pub fn next_potential_block(self) -> Unique<u8> {
-        unsafe { Unique::new_unchecked(self.cast::<u8>().as_ptr().add(self.block_size())) }
+    pub unsafe fn next_potential_block(self) -> Unique<u8> {
+        // TODO: implement check if pointer is valid
+        Unique::new_unchecked(self.cast::<u8>().as_ptr().add(self.block_size()))
     }
 
     /// Returns the allocatable size available for the user
@@ -76,8 +86,10 @@ impl BlockPtr {
     pub fn maybe_merge_next(mut self) -> Option<BlockPtr> {
         let next = self.as_ref().next?;
 
-        if self.next_potential_block().as_ptr() != next.cast::<u8>().as_ptr() {
-            return None;
+        unsafe {
+            if self.next_potential_block().as_ptr() != next.cast::<u8>().as_ptr() {
+                return None;
+            }
         }
 
         dprintln!("[merge]: {} at {:p}", self.as_ref(), self.0);
@@ -91,7 +103,10 @@ impl BlockPtr {
         self.as_mut().size += BLOCK_META_SIZE + next.size();
 
         // Overwrite block meta data for old block to detect double free
-        unsafe { intrinsics::volatile_set_memory(next.cast::<u8>().as_ptr(), 0, BLOCK_META_SIZE) };
+        // SAFETY: passed pointer can't be null
+        unsafe {
+            intrinsics::volatile_set_memory(next.cast::<u8>().as_ptr(), 0, BLOCK_META_SIZE);
+        }
 
         dprintln!("      -> {} at {:p}", self.as_ref(), self.0);
         Some(self)
@@ -117,6 +132,7 @@ impl BlockPtr {
         self.as_mut().size = size;
 
         // Create block with remaining size
+        // SAFETY: we know `self.mem_region()` can't be null and size is within bounds
         let new_block_ptr = unsafe { Unique::new_unchecked(self.mem_region().as_ptr().add(size)) };
         let new_block = BlockPtr::new(new_block_ptr, rem_block_size);
 
@@ -135,21 +151,23 @@ impl BlockPtr {
 }
 
 impl AsMut<Block> for BlockPtr {
-    #[inline(always)]
+    #[inline]
     fn as_mut(&mut self) -> &mut Block {
+        // Safety: we know it is safe to dereference
         unsafe { self.0.as_mut() }
     }
 }
 
 impl AsRef<Block> for BlockPtr {
-    #[inline(always)]
+    #[inline]
     fn as_ref(&self) -> &Block {
+        // Safety: we know it is safe to dereference
         unsafe { self.0.as_ref() }
     }
 }
 
 impl PartialEq for BlockPtr {
-    #[inline(always)]
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.as_ptr() == other.as_ptr()
     }
@@ -179,8 +197,9 @@ pub struct Block {
 }
 
 impl Block {
+    #[must_use]
     pub const fn new(size: usize) -> Self {
-        Block {
+        Self {
             size,
             next: None,
             prev: None,
@@ -196,7 +215,7 @@ impl Block {
 
     /// Verifies block to detect memory corruption.
     /// Returns `true` if block metadata is intact, `false` otherwise.
-    #[inline(always)]
+    #[inline]
     pub fn verify(&self) -> bool {
         self.magic == BLOCK_MAGIC_FREE
     }
@@ -264,19 +283,23 @@ mod tests {
         // Shrink block1 to 256 bytes
         let mut block2 = block1.shrink(256).expect("split block failed");
         assert_block(block1, 256);
-        assert_eq!(
-            block1.next_potential_block().as_ptr(),
-            block2.cast::<u8>().as_ptr()
-        );
+        unsafe {
+            assert_eq!(
+                block1.next_potential_block().as_ptr(),
+                block2.cast::<u8>().as_ptr()
+            );
+        }
         assert_block(block2, total_size - block1.block_size() - BLOCK_META_SIZE);
 
         // Shrink block2 to 256 bytes
         let block3 = block2.shrink(256).expect("split block failed");
         assert_block(block2, 256);
-        assert_eq!(
-            block2.next_potential_block().as_ptr(),
-            block3.cast::<u8>().as_ptr()
-        );
+        unsafe {
+            assert_eq!(
+                block2.next_potential_block().as_ptr(),
+                block3.cast::<u8>().as_ptr()
+            );
+        }
         assert_block(
             block3,
             total_size - block1.block_size() - block2.block_size() - BLOCK_META_SIZE,
