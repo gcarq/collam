@@ -4,6 +4,8 @@
 #![no_std]
 
 #[macro_use]
+extern crate lazy_static;
+#[macro_use]
 extern crate collam;
 
 use core::alloc::{GlobalAlloc, Layout};
@@ -14,7 +16,9 @@ use core::{ffi::c_void, panic};
 use collam::alloc::{block::BlockPtr, Collam};
 use collam::MIN_ALIGN;
 
-static COLLAM: Collam = Collam::new();
+lazy_static! {
+    static ref COLLAM: Collam = Collam::new();
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {

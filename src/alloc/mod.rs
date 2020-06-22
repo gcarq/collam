@@ -4,7 +4,7 @@ use core::{cmp, intrinsics, ptr::null_mut, ptr::Unique};
 use libc_print::libc_eprintln;
 use spin::Mutex;
 
-use crate::alloc::arena::Arena;
+use crate::alloc::arena::heap::HeapArena;
 use crate::alloc::block::{BlockPtr, BLOCK_MIN_REGION_SIZE};
 use crate::util;
 
@@ -13,14 +13,14 @@ pub mod block;
 mod list;
 
 pub struct Collam {
-    heap: Mutex<Arena>,
+    heap: Mutex<HeapArena>,
 }
 
 impl Collam {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            heap: spin::Mutex::new(Arena::new()),
+            heap: spin::Mutex::new(HeapArena::new()),
         }
     }
 

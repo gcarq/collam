@@ -39,6 +39,7 @@ name = "posix"
 version = "0.0.1"
 dependencies = [
  "collam",
+ "lazy_static",
 ]
 
 [[package]]

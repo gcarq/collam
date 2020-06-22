@@ -1,10 +1,12 @@
 use core::convert::TryFrom;
-use core::ptr::Unique;
+use core::ptr::{null_mut, Unique};
 
 use crate::alloc::block::{BlockPtr, BLOCK_META_SIZE};
 use crate::util;
 
 use libc_print::libc_eprintln;
+
+pub const INVALID_PTR: *mut u8 = -1_isize as *mut u8;
 
 lazy_static! {
     static ref PAGE_SIZE: usize =
@@ -12,7 +14,9 @@ lazy_static! {
 }
 
 pub trait MemorySource {
-    /// Requests memory for the minimum specified size from the memory source
+    /// Creates a new memory source with the given initial size.
+    unsafe fn new(size: usize) -> Self;
+    /// Requests memory for the minimum specified size from the memory source.
     unsafe fn request(&self, size: usize) -> Option<BlockPtr>;
     /// Releases given `BlockPtr` back to the memory source.
     /// Returns `true` if block has been released, `false` otherwise.
@@ -20,27 +24,41 @@ pub trait MemorySource {
 }
 
 /// Defines heap segment as memory source.
-/// Makes use of brk(2).
-pub struct HeapSegment;
+pub struct HeapSegment {
+    pub start: Unique<u8>,
+    pub size: usize,
+}
 
 impl HeapSegment {
-    /// Wrapper for the kernel sbrk call.
+    /// Wrapper for sbrk().
     ///
     /// # Safety
     ///
     /// Function is not thread safe.
-    #[inline]
     unsafe fn sbrk(size: isize) -> Option<Unique<u8>> {
-        let ptr = libc::sbrk(size) as *mut u8;
-        if ptr == -1_isize as *mut u8 {
-            None
-        } else {
-            Unique::new(ptr)
+        match libc::sbrk(size) as *mut u8 {
+            INVALID_PTR => None,
+            ptr => Unique::new(ptr),
         }
     }
 }
 
 impl MemorySource for HeapSegment {
+    /// Creates a new memory source with the given initial size.
+    ///
+    /// # Safety
+    ///
+    /// Function is not thread safe.
+    unsafe fn new(size: usize) -> Self {
+        let offset = isize::try_from(size).expect("cannot calculate sbrk offset");
+        Self {
+            start: Self::sbrk(offset).expect("sbrk failed"),
+            size,
+        }
+    }
+
+    /// Requests memory for the minimum specified size from the memory source.
+    ///
     /// # Safety
     ///
     /// Function is not thread safe.
@@ -53,6 +71,9 @@ impl MemorySource for HeapSegment {
         Some(BlockPtr::new(Self::sbrk(offset)?, size - BLOCK_META_SIZE))
     }
 
+    /// Releases given `BlockPtr` back to the memory source.
+    /// Returns `true` if block has been released, `false` otherwise.
+    ///
     /// # Safety
     ///
     /// Function is not thread safe.
@@ -71,6 +92,44 @@ impl MemorySource for HeapSegment {
         // TODO: remove expect
         Self::sbrk(-offset).expect("sbrk failed");
         true
+    }
+}
+
+pub struct MappedMemory {
+    pub start: Unique<u8>,
+    pub size: usize,
+}
+
+impl MappedMemory {
+    /// Wrapper for mmap().
+    ///
+    /// # Safety
+    ///
+    /// Function is not thread safe.
+    unsafe fn mmap(size: usize) -> Option<Unique<u8>> {
+        let prot = libc::PROT_READ | libc::PROT_WRITE;
+        let flags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS;
+        match libc::mmap(null_mut(), size, prot, flags, -1, 0) as *mut u8 {
+            INVALID_PTR => None,
+            ptr => Unique::new(ptr),
+        }
+    }
+}
+
+impl MemorySource for MappedMemory {
+    unsafe fn new(size: usize) -> Self {
+        Self {
+            start: Self::mmap(size).expect("mmap failed"),
+            size,
+        }
+    }
+
+    unsafe fn request(&self, _size: usize) -> Option<BlockPtr> {
+        None
+    }
+
+    unsafe fn release(&mut self, _block: BlockPtr) -> bool {
+        false
     }
 }
 
