@@ -2,40 +2,65 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::{cmp, intrinsics, ptr::null_mut, ptr::Unique};
 
 use libc_print::libc_eprintln;
-use spin::Mutex;
 
 use crate::alloc::arena::heap::HeapArena;
+use crate::alloc::arena::Bookkeeper;
 use crate::alloc::block::{BlockPtr, BLOCK_MIN_REGION_SIZE};
+use crate::sources::{HeapSegment, MemorySource};
 use crate::util;
+use core::cell::UnsafeCell;
 
 mod arena;
 pub mod block;
 mod list;
 
+#[repr(C)]
 pub struct Collam {
-    heap: Mutex<HeapArena>,
+    main_arena: UnsafeCell<HeapArena>,
+    thread_arenas: UnsafeCell<Bookkeeper>,
+}
+
+unsafe impl Sync for Collam {}
+
+impl Default for Collam {
+    fn default() -> Self {
+        let keeper = unsafe { Bookkeeper::from(HeapSegment::new(196_608)) };
+        Self {
+            main_arena: UnsafeCell::new(HeapArena::new()),
+            thread_arenas: UnsafeCell::new(keeper),
+        }
+    }
 }
 
 impl Collam {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            heap: spin::Mutex::new(HeapArena::new()),
+    /// Requests and returns suitable empty `BlockPtr`.
+    fn request_block(&self, size: usize) -> Option<BlockPtr> {
+        let tid = util::gettid();
+        // TODO: SAFETY
+        unsafe {
+            match util::getpid() == tid {
+                true => (&mut *self.main_arena.get()).request(size),
+                false => (&mut *self.thread_arenas.get())
+                    .get(tid)
+                    .as_mut()
+                    .request(size),
+            }
         }
     }
 
-    /// Requests and returns suitable empty `BlockPtr`.
-    #[inline]
-    fn request_block(&self, size: usize) -> Option<BlockPtr> {
-        // SAFETY: we know it is thread safe, because we're locking the mutex
-        unsafe { self.heap.lock().request(size) }
-    }
-
     /// Releases the given `BlockPtr` back to the allocator.
-    #[inline]
     fn release_block(&self, block: BlockPtr) {
-        // SAFETY: we know it is thread safe, because we're locking the mutex
-        unsafe { self.heap.lock().release(block) }
+        let tid = util::gettid();
+        // TODO: SAFETY
+        unsafe {
+            match util::getpid() == tid {
+                true => (&mut *self.main_arena.get()).release(block),
+                false => (&mut *self.thread_arenas.get())
+                    .get(tid)
+                    .as_mut()
+                    .release(block),
+            }
+        }
     }
 }
 
@@ -83,17 +108,13 @@ unsafe impl GlobalAlloc for Collam {
 
         let size = cmp::max(layout.size(), BLOCK_MIN_REGION_SIZE);
         dprintln!("[libcollam.so]: alloc(size={})", size);
-        let mut block = match self.request_block(size) {
+        let block = match self.request_block(size) {
             Some(b) => b,
             None => {
                 dprintln!("[libcollam.so]: failed for size: {}\n", layout.size());
                 return null_mut();
             }
         };
-
-        if let Some(rem_block) = block.shrink(size) {
-            self.release_block(rem_block);
-        }
 
         dprintln!(
             "[libcollam.so]: returning {} at {:p}\n",
@@ -251,7 +272,7 @@ mod tests {
     #[test]
     fn test_collam_alloc_ok() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(123).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -263,7 +284,7 @@ mod tests {
     #[test]
     fn test_collam_alloc_zero_size() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(0).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(ptr.is_null());
@@ -273,7 +294,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_bigger_size() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(16).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -287,7 +308,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_smaller_size() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(512).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -301,7 +322,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_same_size() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(512).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -315,7 +336,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_null() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(16).expect("unable to align layout");
             let ptr = collam.realloc(null_mut(), layout, 789);
             assert_eq!(ptr, null_mut());
@@ -325,7 +346,7 @@ mod tests {
     #[test]
     fn test_collam_dealloc_null() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(16).expect("unable to align layout");
             collam.dealloc(null_mut(), layout);
         }
@@ -334,7 +355,7 @@ mod tests {
     #[test]
     fn test_collam_realloc_memory_corruption() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(16).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());
@@ -357,7 +378,7 @@ mod tests {
     #[test]
     fn test_collam_dealloc_memory_corruption() {
         unsafe {
-            let collam = Collam::new();
+            let collam = Collam::default();
             let layout = util::pad_min_align(32).expect("unable to align layout");
             let ptr = collam.alloc(layout);
             assert!(!ptr.is_null());

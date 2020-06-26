@@ -3,19 +3,25 @@ use libc_print::libc_eprintln;
 use crate::alloc::block::BlockPtr;
 use crate::alloc::list::IntrusiveList;
 use crate::sources::{MappedMemory, MemorySource};
+use crate::util;
 
+#[repr(C)]
 pub struct MappedMemoryArena {
     pub list: IntrusiveList,
+    pub tid: Option<u64>,
     source: MappedMemory,
 }
 
 impl MappedMemoryArena {
     #[must_use]
     pub fn new() -> Self {
-        let source = unsafe { MappedMemory::new(132_000) };
-        let list =
-            IntrusiveList::from(source.start, source.size).expect("unable to initialize list");
-        Self { list, source }
+        // TODO: set sane default
+        let source = unsafe { MappedMemory::new(10_131_072) };
+        Self {
+            list: IntrusiveList::from(&source).expect("unable to initialize list"),
+            source,
+            tid: None,
+        }
     }
 
     /// Requests and returns a suitable empty `BlockPtr` for the given size.
@@ -24,11 +30,12 @@ impl MappedMemoryArena {
     ///
     /// Function is not thread safe.
     pub unsafe fn request(&mut self, size: usize) -> Option<BlockPtr> {
-        if let Some(block) = self.list.pop(size) {
+        if let Some(mut block) = self.list.pop(size) {
+            block.shrink(size).and_then(|b| self.list.insert(b).ok());
             dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
             return Some(block);
         }
-        None
+        panic!("FIXME: request() for size: {}, {}", size, util::gettid());
     }
 
     /// Releases a given `BlockPtr` back to the allocator.
@@ -50,9 +57,7 @@ impl MappedMemoryArena {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::ffi::c_void;
     use core::intrinsics;
-    use libc::sbrk;
 
     #[test]
     fn test_request_block() {

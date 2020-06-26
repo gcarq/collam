@@ -17,7 +17,7 @@ use collam::alloc::{block::BlockPtr, Collam};
 use collam::MIN_ALIGN;
 
 lazy_static! {
-    static ref COLLAM: Collam = Collam::new();
+    static ref COLLAM: Collam = Collam::default();
 }
 
 #[no_mangle]

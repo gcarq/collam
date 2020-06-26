@@ -4,6 +4,7 @@ use crate::alloc::block::BlockPtr;
 use crate::alloc::list::IntrusiveList;
 use crate::sources::{HeapSegment, MemorySource};
 
+#[repr(C)]
 pub struct HeapArena {
     pub list: IntrusiveList,
     source: HeapSegment,
@@ -12,10 +13,11 @@ pub struct HeapArena {
 impl HeapArena {
     #[must_use]
     pub fn new() -> Self {
-        let source = unsafe { HeapSegment::new(132_000) };
-        let list =
-            IntrusiveList::from(source.start, source.size).expect("unable to initialize list");
-        Self { list, source }
+        let source = unsafe { HeapSegment::new(131_072) };
+        Self {
+            list: IntrusiveList::from(&source).expect("unable to initialize list"),
+            source,
+        }
     }
 
     /// Requests and returns a suitable empty `BlockPtr` for the given size.
@@ -25,7 +27,8 @@ impl HeapArena {
     ///
     /// Function is not thread safe.
     pub unsafe fn request(&mut self, size: usize) -> Option<BlockPtr> {
-        if let Some(block) = self.list.pop(size) {
+        if let Some(mut block) = self.list.pop(size) {
+            block.shrink(size).and_then(|b| self.list.insert(b).ok());
             dprintln!("[pop]: {} at {:p}", block.as_ref(), block);
             return Some(block);
         }
@@ -55,9 +58,7 @@ impl HeapArena {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::ffi::c_void;
     use core::intrinsics;
-    use libc::sbrk;
 
     #[test]
     fn test_request_block() {
@@ -66,8 +67,8 @@ mod tests {
             let block = mem.request(256).expect("unable to request block");
             // test that memory region is writable
             intrinsics::volatile_set_memory(block.mem_region().as_ptr(), 42, block.size());
-            let brk = block.next_potential_block().as_ptr();
-            assert_eq!(brk.cast::<c_void>(), sbrk(0));
+            let next = block.next_potential_block().as_ptr();
+            assert!(!next.is_null());
             mem.release(block);
         }
     }
@@ -83,8 +84,8 @@ mod tests {
                 .expect("unable to split block");
             // test that memory region is writable
             intrinsics::volatile_set_memory(rem_block.mem_region().as_ptr(), 42, rem_block.size());
-            let brk = rem_block.next_potential_block().as_ptr();
-            assert_eq!(brk.cast::<c_void>(), sbrk(0));
+            let next = rem_block.next_potential_block().as_ptr();
+            assert!(!next.is_null());
             mem.release(rem_block);
         }
     }

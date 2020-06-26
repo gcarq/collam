@@ -17,16 +17,21 @@ pub trait MemorySource {
     /// Creates a new memory source with the given initial size.
     unsafe fn new(size: usize) -> Self;
     /// Requests memory for the minimum specified size from the memory source.
-    unsafe fn request(&self, size: usize) -> Option<BlockPtr>;
+    unsafe fn request(&mut self, size: usize) -> Option<BlockPtr>;
     /// Releases given `BlockPtr` back to the memory source.
     /// Returns `true` if block has been released, `false` otherwise.
     unsafe fn release(&mut self, block: BlockPtr) -> bool;
+    /// Returns pointer to allocated memory
+    fn ptr(&self) -> Unique<u8>;
+    /// Returns total size of allocated memory
+    fn size(&self) -> usize;
 }
 
 /// Defines heap segment as memory source.
+#[repr(C)]
 pub struct HeapSegment {
-    pub start: Unique<u8>,
-    pub size: usize,
+    ptr: Unique<u8>,
+    size: usize,
 }
 
 impl HeapSegment {
@@ -52,7 +57,7 @@ impl MemorySource for HeapSegment {
     unsafe fn new(size: usize) -> Self {
         let offset = isize::try_from(size).expect("cannot calculate sbrk offset");
         Self {
-            start: Self::sbrk(offset).expect("sbrk failed"),
+            ptr: Self::sbrk(offset).expect("sbrk failed"),
             size,
         }
     }
@@ -62,11 +67,12 @@ impl MemorySource for HeapSegment {
     /// # Safety
     ///
     /// Function is not thread safe.
-    unsafe fn request(&self, size: usize) -> Option<BlockPtr> {
+    unsafe fn request(&mut self, size: usize) -> Option<BlockPtr> {
         let size = util::pad_to_align(BLOCK_META_SIZE + size, *PAGE_SIZE)
             .ok()?
             .size();
         debug_assert!(size > BLOCK_META_SIZE);
+        self.size += size;
         let offset = isize::try_from(size).expect("cannot calculate sbrk offset");
         Some(BlockPtr::new(Self::sbrk(offset)?, size - BLOCK_META_SIZE))
     }
@@ -83,6 +89,7 @@ impl MemorySource for HeapSegment {
             return false;
         }
 
+        self.size -= block.block_size();
         let offset = isize::try_from(block.block_size()).expect("cannot calculate sbrk offset");
         dprintln!(
             "[DataSegment]: freeing {} bytes from process (break={:?})",
@@ -93,11 +100,23 @@ impl MemorySource for HeapSegment {
         Self::sbrk(-offset).expect("sbrk failed");
         true
     }
+
+    #[inline]
+    fn ptr(&self) -> Unique<u8> {
+        self.ptr
+    }
+
+    #[inline]
+    fn size(&self) -> usize {
+        self.size
+    }
 }
 
+/// Defines mapped memory as memory source.
+#[repr(C)]
 pub struct MappedMemory {
-    pub start: Unique<u8>,
-    pub size: usize,
+    ptr: Unique<u8>,
+    size: usize,
 }
 
 impl MappedMemory {
@@ -119,17 +138,27 @@ impl MappedMemory {
 impl MemorySource for MappedMemory {
     unsafe fn new(size: usize) -> Self {
         Self {
-            start: Self::mmap(size).expect("mmap failed"),
+            ptr: Self::mmap(size).expect("mmap failed"),
             size,
         }
     }
 
-    unsafe fn request(&self, _size: usize) -> Option<BlockPtr> {
+    unsafe fn request(&mut self, _size: usize) -> Option<BlockPtr> {
         None
     }
 
     unsafe fn release(&mut self, _block: BlockPtr) -> bool {
         false
+    }
+
+    #[inline]
+    fn ptr(&self) -> Unique<u8> {
+        self.ptr
+    }
+
+    #[inline]
+    fn size(&self) -> usize {
+        self.size
     }
 }
 

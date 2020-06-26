@@ -1,7 +1,7 @@
 use libc_print::libc_eprintln;
 
 use crate::alloc::block::{BlockPtr, BLOCK_META_SIZE, BLOCK_SPLIT_MIN_SIZE};
-use core::ptr::Unique;
+use crate::sources::MemorySource;
 
 #[repr(C)]
 pub struct IntrusiveList {
@@ -18,10 +18,10 @@ impl IntrusiveList {
     }
 
     /// Initialize list from given ptr and size
-    pub fn from(ptr: Unique<u8>, size: usize) -> Result<Self, ()> {
-        debug_assert!(size > BLOCK_META_SIZE);
+    pub fn from<T: MemorySource>(source: &T) -> Result<Self, ()> {
+        debug_assert!(source.size() > BLOCK_META_SIZE);
         let mut instance = Self::new();
-        instance.insert(BlockPtr::new(ptr, size - BLOCK_META_SIZE))?;
+        instance.insert(BlockPtr::new(source.ptr(), source.size() - BLOCK_META_SIZE))?;
         Ok(instance)
     }
 
@@ -251,14 +251,14 @@ mod tests {
     #[test]
     fn test_list_from() {
         let source = unsafe { HeapSegment::new(4096) };
-        let list = IntrusiveList::from(source.start, source.size).unwrap();
+        let list = IntrusiveList::from(&source).unwrap();
         assert!(list.head.is_some());
         assert!(list.tail.is_some());
         assert_eq!(list.head, list.tail);
     }
 
     #[test]
-    fn test_insert_after_no_merge() {
+    fn test_insert_after_not_adjacent() {
         let mut heap = HeapArena::new();
         let mut block = unsafe { heap.request(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
@@ -268,8 +268,8 @@ mod tests {
         // Insert block1
         heap.list.insert(block).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
-        assert_eq!(heap.list.tail, Some(block));
-        assert_eq!(block.as_ref().next, None);
+        // Tail might be another block that is split of to match requested size
+        assert!(heap.list.tail.is_some());
         assert_eq!(block.as_ref().prev, None);
 
         // Insert block3
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_before_no_merge() {
+    fn test_insert_before_not_adjacent() {
         let mut heap = HeapArena::new();
         let mut block = unsafe { heap.request(256).expect("unable to request block") };
         // Block2 imitates a used block. So it will not be added to list
@@ -317,16 +317,15 @@ mod tests {
         // Insert block1
         heap.list.insert(block).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
-        assert_eq!(heap.list.tail, Some(block));
-        assert_eq!(block.as_ref().next, None);
+        // Tail might be another block that is split of to match requested size
+        assert!(heap.list.tail.is_some());
         assert_eq!(block.as_ref().prev, None);
         assert_eq!(block.size(), 64);
 
         // Insert block2
         heap.list.insert(block2).expect("unable to insert");
         assert_eq!(heap.list.head, Some(block));
-        assert_eq!(heap.list.tail, Some(block));
-        assert_eq!(block.as_ref().next, None);
+        assert!(heap.list.tail.is_some());
         assert_eq!(block.as_ref().prev, None);
         assert_eq!(block.size(), 64 + BLOCK_META_SIZE + 64);
 

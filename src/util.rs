@@ -20,6 +20,18 @@ pub fn pad_to_align(size: usize, align: usize) -> Result<Layout, LayoutErr> {
     Ok(Layout::from_size_align(size, align)?.pad_to_align())
 }
 
+/// Returns the current process id
+/// TODO: find a more portable solution
+pub fn getpid() -> u64 {
+    unsafe { libc::getpid() as u64 }
+}
+
+/// Returns the current thread id
+/// TODO: find a more portable solution
+pub fn gettid() -> u64 {
+    unsafe { libc::syscall(libc::SYS_gettid) as u64 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

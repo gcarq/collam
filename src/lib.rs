@@ -8,7 +8,6 @@
 extern crate lazy_static;
 extern crate libc;
 extern crate libc_print;
-extern crate spin;
 
 #[cfg(test)]
 #[macro_use]
